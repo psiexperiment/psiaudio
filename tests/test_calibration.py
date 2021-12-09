@@ -4,10 +4,32 @@ import numpy as np
 
 from psiaudio.api import (
     CalibrationNFError, CalibrationTHDError, FlatCalibration,
-    InterpCalibration,
+    InterpCalibration, PointCalibration,
 )
 
 from psiaudio import util
+
+
+@pytest.fixture
+def relative_levels():
+    # These are the levels, relative to unity gain (i.e., 0 dB) to equalize
+    # these frequencies.
+    return {
+         300:  0.955,
+         500: -0.682,
+         700: -1.073,
+        1000:  0.0,
+        1500:  2.678,
+        2000: -2.406,
+        3000: -4.199,
+        4000:  6.301,
+        6000: -2.664,
+    }
+
+
+@pytest.fixture
+def point_calibration(relative_levels):
+    return PointCalibration.from_spl(relative_levels, vrms=1)
 
 
 def make_tone(fs, f0, duration, phase=0):
@@ -238,3 +260,25 @@ def test_interp_calibration_from_spl_mic():
     for frequency, expected_spl in tests.items():
         assert pytest.approx(expected_spl, abs=1e-2) == \
             calibration.get_spl(frequency, 1)
+
+
+def test_point_calibration(point_calibration, relative_levels):
+    for frequency, level in relative_levels.items():
+        expected = 10**(-level/20)
+        assert expected == point_calibration.get_sf(frequency, 0)
+
+
+def test_nd_point_calibration(point_calibration, relative_levels):
+    frequencies = np.array(list(relative_levels.keys()))
+    levels = np.array(list(relative_levels.values()))
+    expected_rms = 10**(-levels/20)
+
+    frequencies = point_calibration.frequency[:, np.newaxis]
+    rms = point_calibration.get_sf(frequencies, 0)
+    assert rms.shape == frequencies.shape
+    np.testing.assert_array_equal(rms.ravel(), expected_rms)
+
+    frequencies.shape = 3, 3
+    rms = point_calibration.get_sf(frequencies, 0)
+    assert rms.shape == frequencies.shape
+    np.testing.assert_array_equal(rms.ravel(), expected_rms)

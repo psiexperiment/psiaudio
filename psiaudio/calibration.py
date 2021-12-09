@@ -3,6 +3,7 @@ log = logging.getLogger(__name__)
 
 from scipy.interpolate import interp1d
 import numpy as np
+import pandas as pd
 
 from . import util
 
@@ -26,6 +27,9 @@ nf_err_mesg = 'Power at {:.1f}Hz has SNR of {:.2f}dB'
 
 
 class CalibrationError(Exception):
+
+    def __init__(self, message):
+        self.message = message
 
     def __str__(self):
         return self.message
@@ -173,7 +177,62 @@ class FlatCalibration(BaseCalibration):
         return self.get_sf(flb, spl)
 
 
-class InterpCalibration(BaseCalibration):
+def parse_input(x, frequency, label):
+    if frequency is not None:
+        if isinstance(x, (dict, pd.Series)):
+            m = f'Cannot provide mapping for {label} if frequencies are specified'
+            raise ValueError(m)
+        return x, frequency
+    elif isinstance(x, (dict, pd.Series)):
+        return np.fromiter(x.values(), 'double'), \
+            np.fromiter(x.keys(), 'double')
+
+class BaseFrequencyCalibration(BaseCalibration):
+
+    @classmethod
+    def from_pascals(cls, magnitude, frequency=None, vrms=1, **kwargs):
+        '''
+        Generates a calibration object based on the recorded value (in Pascals)
+
+        Parameters
+        ----------
+        magnitude : array-like
+            List of magnitudes (e.g., speaker output in Pa) for the specified
+            RMS voltage.
+        frequency : {None, array-like}
+            List of frequencies (in Hz)
+        vrms : float
+            RMS voltage (in Volts)
+
+        Additional kwargs are passed to the class initialization.
+        '''
+        magnitude, frequency = parse_input(magnitude, frequency, 'magnitude')
+        sensitivity = util.db(vrms) - util.db(magnitude) - util.db(20e-6)
+        return cls(frequency, sensitivity, **kwargs)
+
+    @classmethod
+    def from_spl(cls, spl, frequency=None, vrms=1, **kwargs):
+        '''
+        Generates a calibration object based on the recorded SPL
+
+        Parameters
+        ----------
+        frequency : array-like
+            List of freuquencies (in Hz)
+        spl : array-like
+            List of magnitudes (e.g., speaker output in SPL) for the specified
+            RMS voltage.
+        vrms : float
+            RMS voltage (in Volts)
+
+        Additional kwargs are passed to the class initialization.
+        '''
+        spl, frequency = parse_input(spl, frequency, 'spl')
+        sensitivity = spl - util.db(vrms)
+        return cls(frequency=frequency, sensitivity=sensitivity, **kwargs)
+
+
+class InterpCalibration(BaseFrequencyCalibration):
     '''
     Use when calibration is not flat (i.e., uniform) across frequency.
 
@@ -195,53 +254,6 @@ class InterpCalibration(BaseCalibration):
         microphone amplifier is set to 40 dB gain, then provide -40 as the
         value).
     '''
-    @classmethod
-    def as_attenuation(cls, vrms=1, **kwargs):
-        '''
-        Allows levels to be specified in dB attenuation
-        '''
-        return cls.from_spl([0, 100e3], [0, 0], vrms, **kwargs)
-
-    @classmethod
-    def from_pascals(cls, frequency, magnitude, vrms=1, **kwargs):
-        '''
-        Generates a calibration object based on the recorded value (in Pascals)
-
-        Parameters
-        ----------
-        frequency : array-like
-            List of frequencies (in Hz)
-        magnitude : array-like
-            List of magnitudes (e.g., speaker output in Pa) for the specified
-            RMS voltage.
-        vrms : float
-            RMS voltage (in Volts)
-
-        Additional kwargs are passed to the class initialization.
-        '''
-        sensitivity = util.db(vrms) - util.db(magnitude) - util.db(20e-6)
-        return cls(frequency, sensitivity, **kwargs)
-
-    @classmethod
-    def from_spl(cls, frequency, spl, vrms=1, **kwargs):
-        '''
-        Generates a calibration object based on the recorded SPL
-
-        Parameters
-        ----------
-        frequency : array-like
-            List of freuquencies (in Hz)
-        spl : array-like
-            List of magnitudes (e.g., speaker output in SPL) for the specified
-            RMS voltage.
-        vrms : float
-            RMS voltage (in Volts)
-
-        Additional kwargs are passed to the class initialization.
-        '''
-        sensitivity = spl - util.db(vrms)
-        return cls(frequency, sensitivity, **kwargs)
-
     def __init__(self, frequency, sensitivity, fixed_gain=0):
         self.frequency = np.asarray(frequency)
         self.sensitivity = np.asarray(sensitivity)
@@ -255,7 +267,7 @@ class InterpCalibration(BaseCalibration):
         return self._interp(frequency)-self.fixed_gain
 
 
-class PointCalibration(BaseCalibration):
+class PointCalibration(BaseFrequencyCalibration):
 
     def __init__(self, frequency, sensitivity, fixed_gain=0):
         if np.isscalar(frequency):
@@ -266,20 +278,17 @@ class PointCalibration(BaseCalibration):
         self.sensitivity = np.array(sensitivity)
         self.fixed_gain = fixed_gain
 
-    def get_sens(self, frequency):
-        if np.iterable(frequency):
-            return np.array([self._get_sens(f) for f in frequency])
-        else:
-            return self._get_sens(frequency)
+        # Needed to enable vectorizing instance methods. The decorator approach
+        # does not work.
+        self.get_sens = np.vectorize(self._get_sens)
 
     def _get_sens(self, frequency):
         try:
             i = np.flatnonzero(np.equal(self.frequency, frequency))[0]
+            return self.sensitivity[i]-self.fixed_gain
         except IndexError:
             log.debug('Calibrated frequencies are %r', self.frequency)
-            m = 'Frequency {} not calibrated'.format(frequency)
-            raise CalibrationError(m)
-        return self.sensitivity[i]-self.fixed_gain
+            raise CalibrationError(f'{frequency} Hz not calibrated')
 
 
 if __name__ == '__main__':
