@@ -24,7 +24,7 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     license='LICENSE.txt',
-    description='Audio tools',
+    description='Audio tools supporting psiexperiment',
     entry_points={
         'console_scripts': [],
     },
