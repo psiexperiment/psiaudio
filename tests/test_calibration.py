@@ -216,9 +216,9 @@ def test_unity_calibration():
     assert calibration.get_sf(1000, 0) == 1
     assert calibration.get_sf(1000, 20) == 10
     assert calibration.get_sf(1000, 40) == 100
-    assert calibration.get_spl(1000, 1) == 0
-    assert calibration.get_spl(1000, 10) == 20
-    assert calibration.get_spl(1000, 100) == 40
+    assert calibration.get_db(1000, 1) == 0
+    assert calibration.get_db(1000, 10) == 20
+    assert calibration.get_db(1000, 100) == 40
 
 
 def test_flat_calibration():

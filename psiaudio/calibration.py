@@ -65,27 +65,31 @@ class BaseCalibration:
     frequency : 1D array
         Frequencies that system sensitivity was measured at.
     sensitivity : 1D array
-        Sensitivity of system in dB(V/Pa).
+        Sensitivity of system in dB
     '''
+    def __init__(self, reference):
+        self.reference = reference
+        if reference is not None:
+            setattr(self, f'get_{reference.lower()}', self.get_db)
 
-    def get_spl(self, frequency, voltage):
+    def get_db(self, frequency, voltage):
         sensitivity = self.get_sens(frequency)
         return util.db(voltage) + sensitivity
 
-    def get_sf(self, frequency, spl, attenuation=0):
+    def get_sf(self, frequency, level, attenuation=0):
         sensitivity = self.get_sens(frequency)
-        vdb = spl - sensitivity + attenuation
+        vdb = level - sensitivity + attenuation
         return 10**(vdb/20.0)
 
-    def get_mean_sf(self, flb, fub, spl, attenuation=0):
+    def get_mean_sf(self, flb, fub, level, attenuation=0):
         frequencies = np.arange(flb, fub)
-        return self.get_sf(frequencies, spl).mean(axis=0)
+        return self.get_sf(frequencies, level).mean(axis=0)
 
     def get_attenuation(self, frequency, voltage, level):
-        return self.get_spl(frequency, voltage)-level
+        return self.get_db(frequency, voltage)-level
 
-    def get_gain(self, frequency, spl, attenuation=0):
-        return util.db(self.get_sf(frequency, spl, attenuation))
+    def get_gain(self, frequency, level, attenuation=0):
+        return util.db(self.get_sf(frequency, level, attenuation))
 
     def set_fixed_gain(self, fixed_gain):
         self.fixed_gain = fixed_gain
@@ -112,7 +116,7 @@ class FlatCalibration(BaseCalibration):
         '''
         Allows levels to be specified in dB attenuation
         '''
-        return cls.from_spl(0, vrms, **kwargs)
+        return cls.from_db(0, vrms, **kwargs)
 
     @classmethod
     def from_pascals(cls, magnitude, vrms=1, **kwargs):
@@ -135,22 +139,27 @@ class FlatCalibration(BaseCalibration):
         return cls(sensitivity=sensitivity, **kwargs)
 
     @classmethod
-    def from_spl(cls, spl, vrms=1, **kwargs):
+    def from_db(cls, level, vrms=1, **kwargs):
         '''
-        Generates a calibration object based on the recorded SPL
+        Generates a calibration object based on the recorded level (in dB)
 
         Parameters
         ----------
-        spl : array-like
-            List of magnitudes (e.g., speaker output in SPL) for the specified
-            RMS voltage.
+        levels : array-like
+            List of magnitudes in dB re desired unit (e.g., speaker output in
+            SPL) for the specified RMS voltage.
         vrms : float
             RMS voltage (in Volts)
 
         Additional kwargs are passed to the class initialization.
         '''
-        sensitivity = spl - util.db(vrms)
+        sensitivity = level - util.db(vrms)
         return cls(sensitivity=sensitivity, **kwargs)
+
+    @classmethod
+    def from_spl(cls, level, vrms=1, **kwargs):
+        sensitivity = level - util.db(vrms)
+        return cls(sensitivity=sensitivity, reference='SPL', **kwargs)
 
     @classmethod
     def from_mv_pa(cls, mv_pa, **kwargs):
@@ -159,14 +168,15 @@ class FlatCalibration(BaseCalibration):
 
     @classmethod
     def as_attenuation(cls, vrms=1):
-        return cls.from_spl(0, vrms, **kwargs)
+        return cls.from_level(0, vrms, **kwargs)
 
     @classmethod
     def from_spl(cls, spl, vrms=1, **kwargs):
         sensitivity = spl - util.db(vrms)
-        return cls(sensitivity, **kwargs)
+        return cls(sensitivity, reference='SPL', **kwargs)
 
-    def __init__(self, sensitivity, fixed_gain=0):
+    def __init__(self, sensitivity, fixed_gain=0, reference=None):
+        super().__init__(reference)
         self.sensitivity = sensitivity
         self.fixed_gain = fixed_gain
 
@@ -200,24 +210,29 @@ class BaseFrequencyCalibration(BaseCalibration):
         return cls(frequency, sensitivity, **kwargs)
 
     @classmethod
-    def from_spl(cls, frequency, spl, vrms=1, **kwargs):
+    def from_db(cls, frequency, level, vrms=1, **kwargs):
         '''
-        Generates a calibration object based on the recorded SPL
+        Generates a calibration object based on the recorded level in dB re.
+        reference.
 
         Parameters
         ----------
         frequency : array-like
             List of frequencies (in Hz)
-        spl : array-like
-            List of magnitudes (e.g., speaker output in SPL) for the specified
-            RMS voltage.
+        level : array-like
+            List of magnitudes in dB re. reference (e.g., speaker output in
+            SPL) for the specified RMS voltage.
         vrms : float
             RMS voltage (in Volts)
 
         Additional kwargs are passed to the class initialization.
         '''
-        sensitivity = spl - util.db(vrms)
+        sensitivity = level - util.db(vrms)
         return cls(frequency=frequency, sensitivity=sensitivity, **kwargs)
+
+    @classmethod
+    def from_spl(cls, frequency, spl, vrms=1, **kwargs):
+        return cls.from_db(frequency, spl, vrms, reference='SPL', **kwargs)
 
 
 class InterpCalibration(BaseFrequencyCalibration):
@@ -243,7 +258,8 @@ class InterpCalibration(BaseFrequencyCalibration):
         value).
     '''
     def __init__(self, frequency, sensitivity, fixed_gain=0, phase=None,
-                 fill_value=np.nan):
+                 fill_value=np.nan, reference=None):
+        super().__init__(reference)
         self.frequency = np.asarray(frequency)
         self.sensitivity = np.asarray(sensitivity)
         self.fixed_gain = fixed_gain
@@ -271,7 +287,8 @@ class InterpCalibration(BaseFrequencyCalibration):
 
 class PointCalibration(BaseFrequencyCalibration):
 
-    def __init__(self, frequency, sensitivity, fixed_gain=0):
+    def __init__(self, frequency, sensitivity, fixed_gain=0, reference=None):
+        super().__init__(reference)
         if np.isscalar(frequency):
             frequency = [frequency]
         if np.isscalar(sensitivity):
