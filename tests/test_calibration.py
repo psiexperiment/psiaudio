@@ -1,6 +1,7 @@
 import pytest
 
 import numpy as np
+import pandas as pd
 
 from psiaudio.api import (
     CalibrationNFError, CalibrationTHDError, FlatCalibration,
@@ -28,8 +29,29 @@ def relative_levels():
 
 
 @pytest.fixture
+def relative_phases():
+    # Phase correction data in degrees.
+    values = {
+         300: 50.4,
+         500: 30.1,
+         700: 21.5,
+        1000: 14.9,
+        1500:  9.8,
+        2000:  7.3,
+        3000:  4.6,
+        4000:  3.2,
+        6000:  1.7,
+    }
+    frequencies = np.fromiter(values.keys(), 'double')
+    phases = np.deg2rad(np.fromiter(values.values(), 'double'))
+    return dict(zip(frequencies, phases))
+
+
+@pytest.fixture
 def point_calibration(relative_levels):
-    return PointCalibration.from_spl(relative_levels, vrms=1)
+    frequencies = list(relative_levels.keys())
+    levels = list(relative_levels.values())
+    return PointCalibration.from_spl(frequencies, levels, vrms=1)
 
 
 def make_tone(fs, f0, duration, phase=0):
@@ -236,7 +258,6 @@ def test_interp_calibration_from_spl_speaker():
          8000: 1.00,
         16000: 3.16,
     }
-    print(calibration.sensitivity)
     for frequency, expected_rms in tests.items():
         assert pytest.approx(expected_rms, abs=1e-2) == \
             calibration.get_sf(frequency, 90)
@@ -282,3 +303,18 @@ def test_nd_point_calibration(point_calibration, relative_levels):
     rms = point_calibration.get_sf(frequencies, 0)
     assert rms.shape == frequencies.shape
     np.testing.assert_array_equal(rms.ravel(), expected_rms)
+
+
+def test_phase_calculation(relative_levels, relative_phases):
+    calibration = InterpCalibration.from_spl(
+        frequency=list(relative_levels.keys()),
+        spl=list(relative_levels.values()),
+        phase=list(relative_phases.values()),
+    )
+    for frequency, phase in relative_phases.items():
+        assert calibration.get_phase(frequency) == phase
+    p1 = relative_phases[1000]
+    p2 = relative_phases[1500]
+    p_average = (p1 + p2) / 2
+    assert calibration.get_phase(1250) == p_average
+    assert calibration.get_phase(1251) != p_average

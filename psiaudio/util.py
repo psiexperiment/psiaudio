@@ -86,27 +86,51 @@ def csd(s, fs, window=None, waveform_averages=None):
     if window is not None:
         w = signal.get_window(window, n)
         s = w/w.mean()*s
-    return np.fft.rfft(s, axis=-1)/n
+    return 2.0*np.fft.rfft(s, axis=-1)/n
+
+
+def _phase(csd, unwrap=True):
+    p = np.angle(csd)
+    if unwrap:
+        p = np.unwrap(p)
+    if isinstance(csd, pd.DataFrame):
+        p = pd.DataFrame(p, index=csd.index, columns=csd.columns)
+    elif isinstance(csd, pd.Series):
+        p = pd.Series(p, index=csd.index)
+    return p
+
 
 def phase(s, fs, window=None, waveform_averages=None, unwrap=True):
     c = csd(s, fs, window, waveform_averages)
-    p = np.angle(c)
-    if unwrap:
-        p = np.unwrap(p)
-    return p
+    return _phase(c, unwrap)
+
+
+def _psd(csd):
+    return np.abs(csd)/np.sqrt(2.0)
 
 
 def psd(s, fs, window=None, waveform_averages=None):
     c = csd(s, fs, window, waveform_averages)
-    return 2*np.abs(c)/np.sqrt(2.0)
+    return _psd(c)
 
 
 def psd_freq(s, fs):
     return np.fft.rfftfreq(s.shape[-1], 1.0/fs)
 
 
+def csd_df(s, fs, *args, **kw):
+    c = csd(s, fs, *args, **kw)
+    freqs = pd.Index(psd_freq(s, fs), name='frequency')
+    if c.ndim == 1:
+        name = s.name if isinstance(s, pd.Series) else 'psd'
+        return pd.Series(c, index=freqs, name=name)
+    else:
+        index = s.index if isinstance(s, pd.DataFrame) else None
+        return pd.DataFrame(c, columns=freqs, index=index)
+
+
 def psd_df(s, fs, *args, **kw):
-    p = psd(s, fs)
+    p = psd(s, fs, *args, **kw)
     freqs = pd.Index(psd_freq(s, fs), name='frequency')
     if p.ndim == 1:
         name = s.name if isinstance(s, pd.Series) else 'psd'
@@ -505,3 +529,29 @@ def process_tone(fs, signal, frequency, min_snr=None, max_thd=None,
         return pd.Series(data)
     else:
         return pd.DataFrame(data)
+
+
+def octave_space(lb, ub, step, mode='nearest'):
+    '''
+    >>> freq = octave_space(4, 32, 1)
+    >>> print(freq)
+    [ 4.  8. 16. 32.]
+    >>> freq = octave_space(0.5, 50.0, 0.25, 'nearest')
+    >>> print(round(min(freq), 2))
+    0.5
+    >>> print(round(max(freq), 2))
+    53.82
+    >>> freq = octave_space(0.5, 50.0, 0.25, 'bounded')
+    >>> print(round(min(freq), 2))
+    0.5
+    >>> print(round(max(freq), 2))
+    45.25
+    '''
+    if mode == 'nearest':
+        lbi = round(np.log2(lb) / step) * step
+        ubi = round(np.log2(ub) / step) * step
+    elif mode == 'bounded':
+        lbi = np.ceil(np.log2(lb) / step) * step
+        ubi = np.floor(np.log2(ub) / step) * step
+    x = np.arange(lbi, ubi+step, step)
+    return 2**x

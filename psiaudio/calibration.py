@@ -177,20 +177,10 @@ class FlatCalibration(BaseCalibration):
         return self.get_sf(flb, spl)
 
 
-def parse_input(x, frequency, label):
-    if frequency is not None:
-        if isinstance(x, (dict, pd.Series)):
-            m = f'Cannot provide mapping for {label} if frequencies are specified'
-            raise ValueError(m)
-        return x, frequency
-    elif isinstance(x, (dict, pd.Series)):
-        return np.fromiter(x.values(), 'double'), \
-            np.fromiter(x.keys(), 'double')
-
 class BaseFrequencyCalibration(BaseCalibration):
 
     @classmethod
-    def from_pascals(cls, magnitude, frequency=None, vrms=1, **kwargs):
+    def from_pascals(cls, frequency, magnitude, vrms=1, **kwargs):
         '''
         Generates a calibration object based on the recorded value (in Pascals)
 
@@ -206,19 +196,18 @@ class BaseFrequencyCalibration(BaseCalibration):
 
         Additional kwargs are passed to the class initialization.
         '''
-        magnitude, frequency = parse_input(magnitude, frequency, 'magnitude')
         sensitivity = util.db(vrms) - util.db(magnitude) - util.db(20e-6)
         return cls(frequency, sensitivity, **kwargs)
 
     @classmethod
-    def from_spl(cls, spl, frequency=None, vrms=1, **kwargs):
+    def from_spl(cls, frequency, spl, vrms=1, **kwargs):
         '''
         Generates a calibration object based on the recorded SPL
 
         Parameters
         ----------
         frequency : array-like
-            List of freuquencies (in Hz)
+            List of frequencies (in Hz)
         spl : array-like
             List of magnitudes (e.g., speaker output in SPL) for the specified
             RMS voltage.
@@ -227,7 +216,6 @@ class BaseFrequencyCalibration(BaseCalibration):
 
         Additional kwargs are passed to the class initialization.
         '''
-        spl, frequency = parse_input(spl, frequency, 'spl')
         sensitivity = spl - util.db(vrms)
         return cls(frequency=frequency, sensitivity=sensitivity, **kwargs)
 
@@ -254,17 +242,31 @@ class InterpCalibration(BaseFrequencyCalibration):
         microphone amplifier is set to 40 dB gain, then provide -40 as the
         value).
     '''
-    def __init__(self, frequency, sensitivity, fixed_gain=0):
+    def __init__(self, frequency, sensitivity, fixed_gain=0, phase=None,
+                 fill_value=np.nan):
         self.frequency = np.asarray(frequency)
         self.sensitivity = np.asarray(sensitivity)
         self.fixed_gain = fixed_gain
         self._interp = interp1d(frequency, sensitivity, 'linear',
-                                bounds_error=False)
+                                bounds_error=False, fill_value=fill_value)
+        if phase is not None:
+            self.phase = np.asarray(phase)
+            self._interp_phase = interp1d(frequency, phase, 'linear',
+                                          bounds_error=False,
+                                          fill_value=fill_value)
+        else:
+            self.phase = None
+            self._interp_phase = None
 
     def get_sens(self, frequency):
         # Since sensitivity is in dB(V), subtracting fixed_gain from
         # sensitivity will *increase* the sensitivity of the system.
         return self._interp(frequency)-self.fixed_gain
+
+    def get_phase(self, frequency):
+        if self._interp_phase is None:
+            raise ValueError('No phase correction data available')
+        return self._interp_phase(frequency)
 
 
 class PointCalibration(BaseFrequencyCalibration):
