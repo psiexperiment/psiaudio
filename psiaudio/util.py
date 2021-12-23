@@ -77,16 +77,24 @@ def normalize_rms(waveform, out=None):
     return np.divide(waveform, rms(waveform), out)
 
 
-def csd(s, fs, window=None, waveform_averages=None):
+def csd(s, window=None, waveform_averages=None, detrend='linear'):
     if waveform_averages is not None:
         new_shape = (waveform_averages, -1) + s.shape[1:]
         s = s.reshape(new_shape).mean(axis=0)
-    s = signal.detrend(s, type='linear', axis=-1)
+    if detrend is not None:
+        s = signal.detrend(s, type=detrend, axis=-1)
     n = s.shape[-1]
     if window is not None:
         w = signal.get_window(window, n)
         s = w/w.mean()*s
-    return 2.0*np.fft.rfft(s, axis=-1)/n
+    scale = 2 / n / np.sqrt(2)
+    return np.fft.rfft(s, axis=-1) * scale
+
+
+def csd_to_signal(csd):
+    n = 2 * (len(csd) - 1)
+    scale = 2 / n / np.sqrt(2)
+    return np.fft.irfft(csd, axis=-1) / scale
 
 
 def _phase(csd, unwrap=True):
@@ -101,16 +109,16 @@ def _phase(csd, unwrap=True):
 
 
 def phase(s, fs, window=None, waveform_averages=None, unwrap=True):
-    c = csd(s, fs, window, waveform_averages)
+    c = csd(s, window, waveform_averages)
     return _phase(c, unwrap)
 
 
 def _psd(csd):
-    return np.abs(csd)/np.sqrt(2.0)
+    return np.abs(csd)
 
 
 def psd(s, fs, window=None, waveform_averages=None):
-    c = csd(s, fs, window, waveform_averages)
+    c = csd(s, window, waveform_averages)
     return _psd(c)
 
 
@@ -119,7 +127,7 @@ def psd_freq(s, fs):
 
 
 def csd_df(s, fs, *args, **kw):
-    c = csd(s, fs, *args, **kw)
+    c = csd(s, *args, **kw)
     freqs = pd.Index(psd_freq(s, fs), name='frequency')
     if c.ndim == 1:
         name = s.name if isinstance(s, pd.Series) else 'psd'
@@ -267,10 +275,18 @@ def analyze_tone(waveforms, frequency, fs, mic_gain, trim=0, thd_harmonics=3):
     }
 
 
+def spectrum_to_band_level(spectrum_db, flb, fub):
+    return spectrum_db + 10 * np.log10(fub - flb)
+
+
 def rms(s, detrend=False):
     if detrend:
         s = signal.detrend(s, axis=-1)
     return np.mean(s**2, axis=-1)**0.5
+
+
+def rms_rfft(x):
+    return np.sqrt(np.sum(np.abs(x) ** 2))
 
 
 def golay_pair(n=15):
