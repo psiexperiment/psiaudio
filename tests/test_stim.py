@@ -2,6 +2,7 @@ import pytest
 
 import numpy as np
 from numpy.testing import assert_array_almost_equal, assert_array_equal
+from scipy import signal
 
 
 from psiaudio import stim
@@ -80,7 +81,7 @@ def test_cos2envelope():
     actual = stim.cos2envelope(fs, duration, rise_time, start_time, offset,
                                samples)
 
-    assert_array_almost_equal(actual, expected)
+    assert_array_almost_equal(actual, expected, 4)
 
 
 def test_cos2envelope_factory():
@@ -112,17 +113,30 @@ def test_cos2envelope_factory():
     )
 
     w1 = ramped_tone.get_samples_remaining()
-    assert w1.shape == (int(fs),)
-    x = w1[1:1001]
-    y = w1[-1000:]
-    assert_array_almost_equal(x, y[::-1])
-    assert w1[0] == 0
-    # Samples don't actually return to zero based on how we perform the
-    # calculations. The next sample (if there was one) would be zero.
+
+    # Samples don't actually return to zero at the boundaries based on how we
+    # do the calculations.
+    assert w1[0] == pytest.approx(0, abs=1e-2)
     assert w1[-1] == pytest.approx(0, abs=1e-2)
+    assert w1.shape == (int(fs),)
+    assert_array_almost_equal(w1[1:1001], w1[-1000:][::-1])
 
     w2 = stim.ramped_tone(fs=fs, frequency=frequency, level=level,
                           calibration=cal, duration=duration,
                           rise_time=rise_time)
 
     assert_array_equal(w1, w2)
+
+
+@pytest.mark.parametrize('window', ['cosine-squared', 'blackman'])
+def test_envelope(fs, window):
+    actual = stim.envelope(window, fs, duration=1, rise_time=0.5)
+    if window == 'cosine-squared':
+        # The scipy window function calculates the window points at the bin
+        # centers, whereas my approach is to calculate the window points at the
+        # left edge of the bin.
+        expected = signal.windows.cosine(len(actual)) ** 2
+        assert_array_almost_equal(actual, expected, 4)
+    else:
+        expected = getattr(signal.windows, window)(len(actual))
+        assert_array_equal(actual, expected)

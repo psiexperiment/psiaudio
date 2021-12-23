@@ -6,11 +6,6 @@ from psiaudio import util
 from psiaudio.calibration import CalibrationNFError, CalibrationTHDError
 
 
-@pytest.fixture(scope='module', params=[25e3, 50e3, 100e3, 200e3])
-def fs(request):
-    return request.param
-
-
 @pytest.fixture(scope='module', params=[-20, 20, 60, 100])
 def spectrum_level(request):
     return request.param

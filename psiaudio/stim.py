@@ -142,36 +142,42 @@ class GateFactory(Modulator):
 
 
 ################################################################################
-# Cos2Envelope
+# Gated envelopes
 ################################################################################
-def cos2ramp(t, rise_time, phi=0):
-    return np.sin(2*np.pi*t*1.0/rise_time*0.25+phi)**2
-
-
 @fast_cache
-def cos2envelope(fs, duration, rise_time, offset=0, start_time=0,
-                 samples='auto'):
+def envelope(window, fs, duration, rise_time, offset=0, start_time=0,
+             samples='auto'):
     '''
-    Generates cosine-squared envelope. Can handle generating fragments (i.e.,
+    Generates envelope. Can handle generating fragments (i.e.,
     incomplete sections of the waveform).
 
     Parameters
     ----------
+    window : {'cosine-squared', etc.}
+        Name of window
     fs : float
         Sampling rate
     duration : float
         Duration of envelope (from rise onset to rise offset)
+    rise_time : float
+        Rise time of envelope
     offset : int
         Offset to begin generating waveform at (in samples relative to start)
-    samples : int
-        Number of samples to generate for envelope.
     start_time : float
         Start time of envelope
+    samples : int
+        Number of samples to generate for envelope.
     '''
     if samples == 'auto':
         samples = int(round(duration * fs))
 
     t = (np.arange(samples, dtype=np.double) + offset)/fs
+
+    n_window = int(round(rise_time * fs))
+    if window == 'cosine-squared':
+        ramp = cos2ramp(2 * n_window)
+    else:
+        ramp = getattr(signal.windows, window)(2 * n_window)
 
     m_null_pre = (t < start_time)
     m_onset = (t >= start_time) & (t < (start_time + rise_time))
@@ -195,13 +201,28 @@ def cos2envelope(fs, duration, rise_time, offset=0, start_time=0,
     t_null_post = t[m_null_post]
 
     f_null_pre = np.zeros(len(t_null_pre))
-    f_lower = cos2ramp(t_onset, rise_time, 0)
-    f_upper = cos2ramp(t_offset-(duration-rise_time), rise_time, np.pi/2)
+
+    f_lower = ramp[:n_window][np.flatnonzero(m_onset)]
+    i_upper = np.flatnonzero(m_offset)
+    i_upper -= i_upper.min()
+    f_upper = ramp[n_window:][i_upper]
+
     f_middle = np.ones(len(t_ss))
     f_null_post = np.zeros(len(t_null_post))
 
     concat = [f_null_pre, f_lower, f_middle, f_upper, f_null_post]
     return np.concatenate(concat, axis=-1)
+
+
+def cos2ramp(m):
+    return np.sin(np.pi * np.arange(m) / m)**2
+
+
+@fast_cache
+def cos2envelope(fs, duration, rise_time, offset=0, start_time=0,
+                 samples='auto'):
+    return envelope('cosine-squared', fs, duration, rise_time, offset,
+                    start_time, samples)
 
 
 class Cos2EnvelopeFactory(GateFactory):
