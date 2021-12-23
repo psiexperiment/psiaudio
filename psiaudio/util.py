@@ -276,7 +276,17 @@ def analyze_tone(waveforms, frequency, fs, mic_gain, trim=0, thd_harmonics=3):
 
 
 def spectrum_to_band_level(spectrum_db, flb, fub):
+    '''
+    Convert overall band level to spectrum level
+    '''
     return spectrum_db + 10 * np.log10(fub - flb)
+
+
+def band_to_spectrum_level(band_db, flb, fub):
+    '''
+    Convert overall band level to spectrum level
+    '''
+    return band_db - 10 * np.log10(fub - flb)
 
 
 def rms(s, detrend=False):

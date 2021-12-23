@@ -6,12 +6,12 @@ from psiaudio import util
 from psiaudio.calibration import CalibrationNFError, CalibrationTHDError
 
 
-@pytest.fixture(scope='module', params=[25e3, 100e3])
+@pytest.fixture(scope='module', params=[25e3, 50e3, 100e3, 200e3])
 def fs(request):
     return request.param
 
 
-@pytest.fixture(scope='module', params=[20, 60, 100])
+@pytest.fixture(scope='module', params=[-20, 20, 60, 100])
 def spectrum_level(request):
     return request.param
 
@@ -62,6 +62,12 @@ def test_fft_tone():
     psd = util.psd_df(tone, fs)
     assert psd.max() == pytest.approx(2/np.sqrt(2))
     assert psd.idxmax() == 4000
+
+
+def test_band_to_spectrum_level_roundtrip(spectrum_level, noise_band):
+    band_level = util.spectrum_to_band_level(spectrum_level, *noise_band)
+    spectrum_level_rt = util.band_to_spectrum_level(band_level, *noise_band)
+    assert spectrum_level == pytest.approx(spectrum_level_rt)
 
 
 def test_signal_to_fft_roundtrip():
