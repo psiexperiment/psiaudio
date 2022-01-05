@@ -179,7 +179,8 @@ def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
 
     if rise_time is None:
         duration_samples = int(round(duration * fs))
-        n_window = np.floor(duration_samples / 2)
+        n_window = int(np.floor(duration_samples / 2))
+        rise_time = n_window / fs
     else:
         n_window = int(round(rise_time * fs))
 
@@ -640,7 +641,7 @@ class ChirpFactory(FixedWaveform):
 ################################################################################
 # Basic utility functions for the most common use-cases.
 ################################################################################
-def ramped_tone(fs, frequency, level, rise_time, duration,
+def ramped_tone(fs, frequency, level, duration, rise_time=None,
                 window='cosine-squared', phase=0, calibration=None):
     carrier = tone(fs=fs, frequency=frequency, level=level, phase=phase,
                    calibration=calibration, duration=duration)
