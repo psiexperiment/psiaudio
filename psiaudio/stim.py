@@ -147,7 +147,7 @@ class GateFactory(Modulator):
 # Gated envelopes
 ################################################################################
 @fast_cache
-def envelope(window, fs, duration, rise_time, offset=0, start_time=0,
+def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
              samples='auto'):
     '''
     Generates envelope. Can handle generating fragments (i.e.,
@@ -161,8 +161,9 @@ def envelope(window, fs, duration, rise_time, offset=0, start_time=0,
         Sampling rate
     duration : float
         Duration of envelope (from rise onset to rise offset)
-    rise_time : float
-        Rise time of envelope
+    rise_time : {None, float}
+        Rise time of envelope. If None, then there is no plateau/steady-state
+        portion of the envelope.
     offset : int
         Offset to begin generating waveform at (in samples relative to start)
     start_time : float
@@ -175,7 +176,13 @@ def envelope(window, fs, duration, rise_time, offset=0, start_time=0,
 
     t = (np.arange(samples, dtype=np.double) + offset)/fs
 
-    n_window = int(round(rise_time * fs))
+
+    if rise_time is None:
+        duration_samples = int(round(duration * fs))
+        n_window = np.floor(duration_samples / 2)
+    else:
+        n_window = int(round(rise_time * fs))
+
     if window == 'cosine-squared':
         ramp = cos2ramp(2 * n_window)
     else:
@@ -633,9 +640,10 @@ class ChirpFactory(FixedWaveform):
 ################################################################################
 # Basic utility functions for the most common use-cases.
 ################################################################################
-def ramped_tone(fs, frequency, level, rise_time, duration, phase=0,
-                calibration=None):
+def ramped_tone(fs, frequency, level, rise_time, duration,
+                window='cosine-squared', phase=0, calibration=None):
     carrier = tone(fs=fs, frequency=frequency, level=level, phase=phase,
                    calibration=calibration, duration=duration)
-    env = cos2envelope(fs=fs, rise_time=rise_time, duration=duration)
+    env = envelope(window=window, fs=fs, rise_time=rise_time,
+                   duration=duration)
     return carrier * env

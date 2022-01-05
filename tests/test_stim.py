@@ -129,17 +129,16 @@ def test_cos2envelope_factory():
     assert_array_equal(w1, w2)
 
 
-@pytest.mark.parametrize('window', ['cosine-squared', 'blackman'])
-def test_envelope(fs, window):
-    actual = stim.envelope(window, fs, duration=1, rise_time=0.5)
-    if window == 'cosine-squared':
+def test_envelope(fs, stim_window):
+    actual = stim.envelope(stim_window, fs, duration=1, rise_time=0.5)
+    if stim_window == 'cosine-squared':
         # The scipy window function calculates the window points at the bin
         # centers, whereas my approach is to calculate the window points at the
         # left edge of the bin.
         expected = signal.windows.cosine(len(actual)) ** 2
         assert_array_almost_equal(actual, expected, 4)
     else:
-        expected = getattr(signal.windows, window)(len(actual))
+        expected = getattr(signal.windows, stim_window)(len(actual))
         assert_array_equal(actual, expected)
 
 
