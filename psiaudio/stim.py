@@ -6,6 +6,8 @@ import itertools
 import numpy as np
 from scipy import signal
 
+from . import util
+
 
 def fast_cache(f):
     cache = {}
@@ -299,6 +301,51 @@ class SAMEnvelopeFactory(Modulator):
 
 
 ################################################################################
+# Broadband noise
+################################################################################
+class BroadbandNoiseFactory(Carrier):
+    '''
+    Factory for generating continuous bandlimited noise
+    '''
+    def __init__(self, fs, level, seed=1, calibration=None):
+        self.fs = fs
+        self.level = level
+        self.seed = seed
+        self.calibration = calibration
+
+        if calibration is None:
+            self.sf = level
+        else:
+            self.sf = calibration.get_mean_sf(0, fs, level)
+
+        # The RMS value of noise drawn from a uniform distribution is
+        # amplitude/sqrt(3). By setting the low and high to sqrt(3) and
+        # multiplying by the scaling factors, we can ensure that the noise is
+        # initially generated with the desired RMS. Correcting after generating
+        # the noise (e.g., by dividing by the RMS of the generated sample) is
+        # problematic due to the random nature of the noise itself. To the
+        # extent possible, psiaudio expects reproducibility regardless of the
+        # number of samples the noise is segmented into.
+        self.low = -np.sqrt(3) * self.sf
+        self.high = np.sqrt(3) * self.sf
+        self.reset()
+
+    def reset(self):
+        self.state = np.random.RandomState(self.seed)
+
+    def next(self, samples):
+        return self.state.uniform(low=self.low, high=self.high, size=samples)
+
+
+def broadband_noise(fs, level, duration, seed=1, calibration=None):
+    args = locals()
+    args.pop('duration')
+    factory = BroadbandNoiseFactory(**args)
+    samples = int(round(duration * fs))
+    return factory.next(samples)
+
+
+################################################################################
 # Bandlimited noise
 ################################################################################
 @fast_cache
@@ -327,60 +374,143 @@ class BandlimitedNoiseFactory(Carrier):
     Factory for generating continuous bandlimited noise
     '''
     def __init__(self, fs, seed, level, fl, fh, filter_rolloff,
-                 passband_attenuation, stopband_attenuation, equalize,
-                 calibration):
-        vars(self).update(locals())
+                 passband_attenuation, stopband_attenuation, equalize=False,
+                 calibration=None, discard_initial_samples=True):
+
+        self.fs = fs
+        self.level = level
+        self.seed = seed
+        self.calibration = calibration
+        self.filter_rolloff = filter_rolloff
+        self.passband_attenuation = passband_attenuation
+        self.stopband_attenuation = stopband_attenuation
+        self.equalize = equalize
+        self.calibration = calibration
+        self.fl = fl
+        self.fh = fh
+        self.discard_initial_samples = discard_initial_samples
 
         # Calculate the scaling factor for the noise
         pass_bandwidth = fh-fl
-        self.sf = calibration.get_mean_sf(fl, fh, level)
+        if calibration is None:
+            self.sf = level
+        else:
+            self.sf = calibration.get_mean_sf(fl, fh, level)
 
-        # This was copied from the EPL CFT. Need to figure out how this
+        # This was copied from the EPL CFTS. Need to figure out how this
         # equation works so we can document this better. But it works as
         # intended to scale the noise back to RMS=1.
-        self.filter_sf = 1.0/np.sqrt(pass_bandwidth*2/fs/3.0)
+        self.filter_sf = 1.0 / np.sqrt(pass_bandwidth * 2 / fs)
 
         # The RMS value of noise drawn from a uniform distribution is
         # amplitude/sqrt(3). By setting the low and high to sqrt(3) and
         # multiplying by the scaling factors, we can ensure that the noise is
         # initially generated with the desired RMS.
-        self.low = -np.sqrt(3)*self.filter_sf*self.sf
-        self.high = np.sqrt(3)*self.filter_sf*self.sf
+        self.low = -np.sqrt(3) * self.filter_sf * self.sf
+        self.high = np.sqrt(3) * self.filter_sf * self.sf
 
         # Calculate the stop bandwidth as octaves above and below the passband.
         # Precompute the filter settings.
         fls, fhs = fl*(2**-filter_rolloff), fh*(2**filter_rolloff)
-        b, a, bp_zi = _calculate_bandlimited_noise_filter(fs, fl, fh, fls, fhs,
-                                                          passband_attenuation,
-                                                          stopband_attenuation)
-        self.b = b
-        self.a = a
-        self.initial_bp_zi = bp_zi
+        self.b, self.a, self.initial_bp_zi = \
+            _calculate_bandlimited_noise_filter(fs, fl, fh, fls, fhs,
+                                                passband_attenuation,
+                                                stopband_attenuation)
 
         # Calculate the IIR filter if we are equalizing the noise.
         if equalize:
-            iir, iir_zi = _calculate_bandlimited_noise_iir(fs, calibration, fl, fh)
-            self.iir = iir
-            self.initial_iir_zi = iir_zi
+            self.iir, self.initial_iir_zi = \
+                _calculate_bandlimited_noise_iir(fs, calibration, fl, fh)
         else:
-            self.iir = None
-            self.initial_iir_zi = None
+            self.iir = self.initial_iir_zi = None
 
         self.reset()
 
     def reset(self):
+        self.state = np.random.RandomState(self.seed)
         self.iir_zi = self.initial_iir_zi
         self.bp_zi = self.initial_bp_zi
-        self.state = np.random.RandomState(self.seed)
+        self.next(int(np.ceil(self.fs)))
 
     def next(self, samples):
         waveform = self.state.uniform(low=self.low, high=self.high, size=samples)
         if self.equalize:
-            waveform, self.iir_zi = signal.lfilter(self.iir, [1], waveform,
-                                                   zi=self.iir_zi)
-        waveform, self.bp_zi = signal.lfilter(self.b, self.a, waveform,
-                                              zi=self.bp_zi)
+            waveform, self.iir_zi = signal.lfilter(self.iir, [1], waveform, zi=self.iir_zi)
+        waveform, self.bp_zi = signal.lfilter(self.b, self.a, waveform, zi=self.bp_zi)
         return waveform
+
+
+def bandlimited_noise(fs, level, fl, fh, duration, filter_rolloff=1,
+                      passband_attenuation=1, stopband_attenuation=80,
+                      equalize=False, seed=1, calibration=None):
+    args = locals()
+    args.pop('duration')
+    factory = BandlimitedNoiseFactory(**args)
+    samples = int(round(duration * fs))
+    return factory.next(samples)
+
+
+################################################################################
+# Shaped noise
+################################################################################
+def _calculate_firwin2_taps(gains, fs, window, ntaps):
+    freqs = list(gains.keys())
+    gains = util.dbi(list(gains.values()))
+    taps = signal.firwin2(ntaps, freqs, gains, fs=fs, window=window)
+    initial_zi = signal.lfilter_zi(taps, [1])
+    return taps, initial_zi
+
+
+class ShapedNoiseFactory(Carrier):
+    '''
+    Factory for generating continuous shaped noise using FIR filters.
+    '''
+    def __init__(self, fs, level, gains, ntaps=10001, window='hanning',
+                 seed=None, calibration=None):
+
+        self.fs = fs
+        self.level = level
+        self.gains = gains
+        self.ntaps = ntaps
+        self.window = window
+        self.seed = seed
+        self.calibration = calibration
+
+        self.taps, self.initial_zi = _calculate_firwin2_taps(gains, fs, window, ntaps)
+        self.sf = level if calibration is None else calibration.get_mean_sf(0, fs/2, level)
+
+        # Calculate how much the filter attenuates a *broadband* (i.e., white
+        # noise) signal. This calculation is obviously not accurate for other
+        # types of signals.
+        w, h = signal.freqz(self.taps, fs=fs)
+        h_mean = np.mean(np.abs(h) ** 2) ** 0.5
+        self.filter_sf = 1 / h_mean
+
+        # The RMS value of noise drawn from a uniform distribution is
+        # amplitude/sqrt(3). By setting the low and high to sqrt(3) and
+        # multiplying by the scaling factors, we can ensure that the noise is
+        # initially generated with the desired RMS.
+        self.scale = np.sqrt(3) * self.filter_sf * self.sf
+        self.reset()
+
+    def reset(self):
+        self.zi = self.initial_zi
+        self.state = np.random.RandomState(self.seed)
+        self.next(len(self.initial_zi + 1))
+
+    def next(self, samples):
+        waveform = self.state.uniform(low=-self.scale, high=self.scale, size=samples)
+        waveform, self.zi = signal.lfilter(self.taps, [1], waveform, zi=self.zi)
+        return waveform
+
+
+def shaped_noise(fs, level, gains, duration, ntaps=10001, window='hanning',
+                 seed=1, calibration=None):
+    args = locals()
+    args.pop('duration')
+    factory = ShapedNoiseFactory(**args)
+    samples = int(round(duration * fs))
+    return factory.next(samples)
 
 
 ################################################################################

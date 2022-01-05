@@ -5,8 +5,9 @@ from numpy.testing import assert_array_almost_equal, assert_array_equal
 from scipy import signal
 
 
-from psiaudio import stim
 from psiaudio import calibration
+from psiaudio import stim
+from psiaudio import util
 
 
 def test_tone_factory():
@@ -140,3 +141,115 @@ def test_envelope(fs, window):
     else:
         expected = getattr(signal.windows, window)(len(actual))
         assert_array_equal(actual, expected)
+
+
+def _test_factory(factory_class, kwargs, chunksize, n_chunks, exact=True):
+    factory = factory_class(**kwargs)
+    chunked_samples = [factory.next(chunksize) for i in range(n_chunks)]
+    chunked_samples = np.concatenate(chunked_samples, axis=-1)
+    factory.reset()
+    unchunked_samples = factory.next(chunksize * n_chunks)
+    if exact:
+        assert_array_equal(unchunked_samples, chunked_samples)
+    else:
+        assert_array_almost_equal(unchunked_samples, chunked_samples)
+
+
+def _test_noise_helper(fn, kwargs, stim_level, stim_calibration):
+    actual = fn(**kwargs)
+    actual_level = stim_calibration.get_spl(1e3, util.rms(actual))
+    assert actual_level == stim_level
+
+    # Verify that this is frozen noise
+    repeat = fn(**kwargs)
+    assert_array_equal(actual, repeat)
+
+    # Make sure a different seed behaves appropriately
+    with pytest.raises(AssertionError):
+        repeat = fn(**kwargs, seed=32)
+        assert_array_equal(actual, repeat)
+
+
+def test_broadband_noise(fs, stim_level, stim_duration, stim_calibration):
+    kwargs = dict(fs=fs, level=stim_level, duration=stim_duration,
+                  calibration=stim_calibration)
+    _test_noise_helper(
+        stim.broadband_noise,
+        kwargs,
+        pytest.approx(stim_level, abs=1),
+        stim_calibration
+    )
+
+
+def test_broadband_noise_factory(fs, stim_level, stim_calibration, chunksize,
+                                 n_chunks):
+    kwargs = dict(fs=fs, level=stim_level, calibration=stim_calibration)
+    _test_factory(stim.BroadbandNoiseFactory, kwargs, chunksize, n_chunks)
+
+
+def test_bandlimited_noise(fs, stim_level, stim_duration, stim_fl, stim_fh,
+                           stim_calibration):
+    if fs in (25e3, 200e3):
+        pytest.skip()
+    if stim_duration == 0.001:
+        abs_difference = 5
+    elif stim_duration == 0.01:
+        abs_difference = 2.5
+    else:
+        abs_difference = 1
+    kwargs = dict(fs=fs, level=stim_level, fl=stim_fl, fh=stim_fh,
+                  calibration=stim_calibration, duration=stim_duration)
+
+    _test_noise_helper(
+        stim.bandlimited_noise,
+        kwargs,
+        pytest.approx(stim_level, abs=abs_difference),
+        stim_calibration
+    )
+
+
+def test_bandlimited_noise_factory(fs, stim_level, stim_fl, stim_fh,
+                                   stim_calibration, chunksize, n_chunks):
+    if fs in (25e3, 200e3):
+        pytest.skip()
+    kwargs = dict(fs=fs, level=stim_level, fl=stim_fl, fh=stim_fh,
+                  calibration=stim_calibration, seed=1, filter_rolloff=1,
+                  passband_attenuation=1, stopband_attenuation=80)
+    _test_factory(stim.BandlimitedNoiseFactory, kwargs, chunksize, n_chunks)
+
+
+@pytest.fixture
+def shaped_noise_gains(fs, stim_fl, stim_fh):
+    return {
+        0: 0,
+        stim_fl * 0.99: 0,
+        stim_fl: -80,
+        stim_fh: -80,
+        stim_fh / 0.99: 0,
+        fs / 2: 0,
+    }
+
+
+def test_shaped_noise(fs, stim_level, stim_duration, shaped_noise_gains, stim_calibration):
+    if stim_duration == 0.001:
+        abs_difference = 5
+    elif stim_duration == 0.01:
+        abs_difference = 2.5
+    else:
+        abs_difference = 1
+    kwargs = dict(fs=fs, level=stim_level, gains=shaped_noise_gains,
+                  calibration=stim_calibration, duration=stim_duration)
+    _test_noise_helper(stim.shaped_noise,
+                       kwargs,
+                       pytest.approx(stim_level, abs=abs_difference),
+                       stim_calibration)
+
+
+def test_shaped_noise_factory(fs, stim_level, shaped_noise_gains,
+                              stim_calibration, chunksize, n_chunks):
+    kwargs = dict(fs=fs, level=stim_level, gains=shaped_noise_gains,
+                  calibration=stim_calibration, seed=1)
+    # Set exact to False. There seem to be some numerical precision issues, but
+    # they are less than 1e-14.
+    _test_factory(stim.ShapedNoiseFactory, kwargs, chunksize, n_chunks,
+                  exact=False)
