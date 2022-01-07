@@ -1,14 +1,21 @@
+'''
+Simple tone pips
+================
+
+Demonstration of how to generate a simple tone pip.
+'''
 import matplotlib.pyplot as plt
 import numpy as np
 
 from psiaudio import calibration, stim, util
 
-
+###############################################################################
 # Since 1 Pascal is 94 dB SPL, this calibration results in the stimulus
 # waveform being scaled such that 1 Vrms = 1 Pascal.
 cal = calibration.FlatCalibration.from_spl(94)
 fs = 100e3
 
+###############################################################################
 # Stimulus levels are always specified in RMS power, not peak-equivalent power.
 # This means that you will see the peak-to-peak tone amplitude run from -1.4 to
 # 1.4 (resulting in a RMS value of 1).
@@ -21,6 +28,7 @@ tone1 = stim.ramped_tone(
     calibration=cal,
 )
 
+###############################################################################
 # The default value for `rise_time` is None, which indicates that there's no
 # plateau (i.e., steady state) period.
 tone2 = stim.ramped_tone(

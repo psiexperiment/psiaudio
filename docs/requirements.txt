@@ -1,0 +1,5 @@
+sphinx-gallery
+sphinx-rtd-theme
+matplotlib
+IPython
+psiaudio @ git+https://github.com/psiexperiment/psiaudio

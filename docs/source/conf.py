@@ -1,3 +1,5 @@
+import sys
+
 # Configuration file for the Sphinx documentation builder.
 #
 # This file only contains a selection of the most common options. For a full
@@ -18,8 +20,8 @@
 # -- Project information -----------------------------------------------------
 
 project = 'psiaudio'
-copyright = '2022, Brad Buran'
-author = 'Brad Buran'
+copyright = '2022'
+author = 'psiexperiment development team'
 
 
 # -- General configuration ---------------------------------------------------
@@ -36,6 +38,7 @@ extensions = [
     'sphinx.ext.doctest',
     'sphinx.ext.inheritance_diagram',
     'sphinx.ext.napoleon',
+    'sphinx_gallery.gen_gallery',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -52,9 +55,27 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'sphinx_rtd_theme'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+
+
+# Sphinx Gallery configuration
+sphinx_gallery_conf = {
+    'examples_dirs': ['../../examples'],
+    'backreferences_dir': 'gen_modules/back_references',
+    'filename_pattern': '^((?!sgskip).)*$',
+    'doc_module': ('psiaudio'),
+    'gallery_dirs': ['gallery'],
+}
+
+
+# configuration for intersphinx: refer to the Python standard library.
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/{.major}'.format(sys.version_info), None),
+    'matplotlib': ('https://matplotlib.org/', None),
+    'pandas': ('https://pandas.pydata.org/', None),
+}

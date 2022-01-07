@@ -1,26 +1,23 @@
-.. psiaudio documentation master file, created by
-   sphinx-quickstart on Wed Jan  5 08:49:22 2022.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+psiaudio
+========
 
-Welcome to psiaudio's documentation!
-====================================
+For now, we only have galleries.
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
+   :hidden:
 
-   stim-examples
+.. toctree::
+   :maxdepth: 2
+   :caption: Galleries:
 
-Examples
---------
+   gallery/index
 
-Stimulus generation
+.. 
+    Indices and tables
+    ------------------
 
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+    * :ref:`genindex`
+    * :ref:`modindex`
+    * :ref:`search`

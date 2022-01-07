@@ -1,3 +1,11 @@
+'''
+Calibrated multitone complex
+============================
+
+This demonstrates how to generate multiple tones of equal SPL when the
+speaker's output is not uniform.
+'''
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -10,6 +18,7 @@ cal = calibration.InterpCalibration.from_spl(frequencies, levels)
 
 fs = 100e3
 
+###############################################################################
 # We take advantage of Numpy broadcasting to return a 2D array of frequency x
 # time. Each row represents a tone of the desired frequency. By summing across
 # rows, we can get a single stimulus waveform that contains all tone
@@ -26,6 +35,7 @@ tone_complex = stim.ramped_tone(
 
 tone_complex = tone_complex.sum(axis=0)
 
+###############################################################################
 # Calculate an offset such that the tone is centeredi n the time plot.
 t = np.arange(len(tone_complex)) / fs * 1e3
 

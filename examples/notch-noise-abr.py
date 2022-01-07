@@ -1,3 +1,12 @@
+'''
+====================
+Tones in notch noise
+====================
+
+This demonstrates how to generate notch-noise tone pips that can be used for an
+ABR stimulus.
+'''
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -7,12 +16,14 @@ from psiaudio import calibration, stim, util
 cal = calibration.FlatCalibration.from_spl(94)
 fs = 100e3
 
+###############################################################################
 # In human ABRs, duration typically varies with frequency but the number of
 # cycles are fixed.
 n_cycles = 8
 frequency = 4e3
 duration = 8 / 4e3
 
+###############################################################################
 # Since the calibration scales stimuli to match the requested RMS level, we
 # need to subtract by 3 dB if we want peak-equivalent SPL.
 tone = stim.ramped_tone(
@@ -25,12 +36,14 @@ tone = stim.ramped_tone(
 )
 
 
+###############################################################################
 # Notch noise calculations. By dividing or multiplying by the same number, we
 # generate a notch where both sides are equidistant from the target frequency
 # on a log scale.
 fl = frequency / 1.5
 fh = frequency * 1.5
 
+###############################################################################
 # The gain dictionary must start at 0 Hz and end at Nyquist (i.e., fs/2).
 gains = {
     # No attenuation for frequencies below the notch. The transition from no
@@ -60,6 +73,7 @@ noise_level = cal.get_spl(None, util.rms(noise))
 tone_level = cal.get_spl(frequency, tone.max())
 
 
+###############################################################################
 # Calculate an offset such that the tone is centeredi n the time plot.
 tone_offset = 10e-3 - duration / 2
 t_tone = (np.arange(len(tone)) / fs + tone_offset) * 1e3
