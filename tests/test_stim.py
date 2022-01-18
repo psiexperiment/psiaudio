@@ -4,10 +4,9 @@ import numpy as np
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 from scipy import signal
 
+from psiaudio import calibration, stim, util
 
-from psiaudio import calibration
-from psiaudio import stim
-from psiaudio import util
+from conftest import assert_chunked_generation
 
 
 def test_tone_factory():
@@ -50,10 +49,10 @@ def test_tone_factory():
     assert_array_equal(waveform, expected)
 
 
-def test_silence_factory():
-    silence = stim.SilenceFactory()
+def test_silence_factory(silence_fill_value):
+    silence = stim.SilenceFactory(fill_value=silence_fill_value)
     waveform = silence.next(100)
-    expected = np.zeros(100)
+    expected = np.full(100, silence_fill_value)
     assert_array_equal(waveform, expected)
 
     silence.reset()
@@ -61,27 +60,24 @@ def test_silence_factory():
     assert_array_equal(waveform, expected)
 
 
-def test_cos2envelope():
+def test_cos2envelope_shape():
     fs = 100e3
     offset = 0
     samples = 400000
     start_time = 0
-    rise_time = 0.25
+    rise_time = 1.0
     duration = 4.0
 
     expected = np.ones(400000)
     t_samples = round(rise_time*fs)
     t_env = np.linspace(0, rise_time, t_samples, endpoint=False)
-
     ramp = np.sin(2*np.pi*t_env*1.0/rise_time*0.25)**2
     expected[:t_samples] = ramp
-
     ramp = np.sin(2*np.pi*t_env*1.0/rise_time*0.25 + np.pi/2)**2
     expected[-t_samples:] = ramp
 
     actual = stim.cos2envelope(fs, duration, rise_time, start_time, offset,
                                samples)
-
     assert_array_almost_equal(actual, expected, 4)
 
 
@@ -129,126 +125,101 @@ def test_cos2envelope_factory():
     assert_array_equal(w1, w2)
 
 
-def test_envelope(fs, stim_window):
-    actual = stim.envelope(stim_window, fs, duration=1, rise_time=0.5)
-    if stim_window == 'cosine-squared':
+def test_cos2envelope_partial_generation(fs):
+    duration = 10e-3
+    tone_duration = 5e-3
+    rise_time = 0.5e-3
+    samples = round(duration*fs)
+
+    # Make sure that the envelope is identical even if we delay the start
+    y0 = stim.cos2envelope(fs, duration=tone_duration, rise_time=rise_time,
+                           samples=samples)
+    for start_time in (0.1e-3, 0.2e-3, 0.3e-3):
+        y1 = stim.cos2envelope(fs, offset=0, samples=samples,
+                               start_time=start_time, rise_time=rise_time,
+                               duration=tone_duration)
+        n = round(start_time * fs)
+        np.testing.assert_allclose(y0[:-n], y1[n:])
+
+    # Now, test piecemeal generation
+    partition_size = 0.1e-3
+    partition_samples = round(partition_size * fs)
+    n_partitions = round(samples / partition_samples)
+    for start_time in (0, 0.1e-3, 0.2e-3, 0.3e-3):
+        env = stim.Cos2EnvelopeFactory(fs, rise_time=rise_time,
+                                       duration=tone_duration,
+                                       input_factory=stim.SilenceFactory(fill_value=1),
+                                       start_time=start_time)
+        y1 = [env.next(partition_samples) for i in range(n_partitions)]
+        y1 = np.concatenate(y1)
+        n = round(start_time * fs)
+        if n > 0:
+            np.testing.assert_allclose(y0[:-n], y1[n:])
+        else:
+            np.testing.assert_allclose(y0, y1)
+
+
+@pytest.fixture(scope='module', params=['cosine-squared', 'blackman'])
+def env_window(request):
+    return request.param
+
+
+@pytest.fixture(scope='module', params=[5e-3, 0.1, 1, 10])
+def env_duration(request):
+    return request.param
+
+
+@pytest.fixture(scope='module', params=[None, 0.25e-3, 2.5])
+def env_rise_time(request):
+    return request.param
+
+
+def test_envelope(fs, env_window, env_duration, env_rise_time, chunksize,
+                  n_chunks):
+    if (env_rise_time is not None) and (env_duration < (env_rise_time * 2)):
+        mesg = 'Rise time longer than envelope duration'
+        with pytest.raises(ValueError):
+            actual = stim.envelope(env_window, fs, duration=env_duration,
+                                   rise_time=env_rise_time)
+        return
+
+    actual = stim.envelope(env_window, fs, duration=env_duration,
+                           rise_time=env_rise_time)
+
+    if env_rise_time is None:
+        n_window = (len(actual) // 2) * 2
+    else:
+        n_window = int(round(env_rise_time * fs)) * 2
+    n_steady_state = len(actual) - n_window
+
+    if env_window == 'cosine-squared':
         # The scipy window function calculates the window points at the bin
         # centers, whereas my approach is to calculate the window points at the
         # left edge of the bin.
-        expected = signal.windows.cosine(len(actual)) ** 2
-        assert_array_almost_equal(actual, expected, 4)
+        expected = signal.windows.cosine(n_window) ** 2
+        if n_steady_state != 0:
+            expected = np.concatenate((
+                expected[:n_window//2],
+                np.ones(n_steady_state),
+                expected[n_window//2:],
+            ), axis=-1)
+        assert_array_almost_equal(actual, expected, 1)
     else:
-        expected = getattr(signal.windows, stim_window)(len(actual))
+        expected = getattr(signal.windows, env_window)(n_window)
+        if n_steady_state != 0:
+            expected = np.concatenate((
+                expected[:n_window//2],
+                np.ones(n_steady_state),
+                expected[n_window//2:],
+            ), axis=-1)
         assert_array_equal(actual, expected)
 
-
-def _test_factory(factory_class, kwargs, chunksize, n_chunks, exact=True):
-    factory = factory_class(**kwargs)
-    chunked_samples = [factory.next(chunksize) for i in range(n_chunks)]
-    chunked_samples = np.concatenate(chunked_samples, axis=-1)
-    factory.reset()
-    unchunked_samples = factory.next(chunksize * n_chunks)
-    if exact:
-        assert_array_equal(unchunked_samples, chunked_samples)
-    else:
-        assert_array_almost_equal(unchunked_samples, chunked_samples)
-
-
-def _test_noise_helper(fn, kwargs, stim_level, stim_calibration):
-    actual = fn(**kwargs)
-    actual_level = stim_calibration.get_spl(1e3, util.rms(actual))
-    assert actual_level == stim_level
-
-    # Verify that this is frozen noise
-    repeat = fn(**kwargs)
-    assert_array_equal(actual, repeat)
-
-    # Make sure a different seed behaves appropriately
-    with pytest.raises(AssertionError):
-        repeat = fn(**kwargs, seed=32)
-        assert_array_equal(actual, repeat)
-
-
-def test_broadband_noise(fs, stim_level, stim_duration, stim_calibration):
-    kwargs = dict(fs=fs, level=stim_level, duration=stim_duration,
-                  calibration=stim_calibration)
-    _test_noise_helper(
-        stim.broadband_noise,
-        kwargs,
-        pytest.approx(stim_level, abs=1),
-        stim_calibration
-    )
-
-
-def test_broadband_noise_factory(fs, stim_level, stim_calibration, chunksize,
-                                 n_chunks):
-    kwargs = dict(fs=fs, level=stim_level, calibration=stim_calibration)
-    _test_factory(stim.BroadbandNoiseFactory, kwargs, chunksize, n_chunks)
-
-
-def test_bandlimited_noise(fs, stim_level, stim_duration, stim_fl, stim_fh,
-                           stim_calibration):
-    if fs in (25e3, 200e3):
-        pytest.skip()
-    if stim_duration == 0.001:
-        abs_difference = 5
-    elif stim_duration == 0.01:
-        abs_difference = 2.5
-    else:
-        abs_difference = 1
-    kwargs = dict(fs=fs, level=stim_level, fl=stim_fl, fh=stim_fh,
-                  calibration=stim_calibration, duration=stim_duration)
-
-    _test_noise_helper(
-        stim.bandlimited_noise,
-        kwargs,
-        pytest.approx(stim_level, abs=abs_difference),
-        stim_calibration
-    )
-
-
-def test_bandlimited_noise_factory(fs, stim_level, stim_fl, stim_fh,
-                                   stim_calibration, chunksize, n_chunks):
-    if fs in (25e3, 200e3):
-        pytest.skip()
-    kwargs = dict(fs=fs, level=stim_level, fl=stim_fl, fh=stim_fh,
-                  calibration=stim_calibration, seed=1, filter_rolloff=1,
-                  passband_attenuation=1, stopband_attenuation=80)
-    _test_factory(stim.BandlimitedNoiseFactory, kwargs, chunksize, n_chunks)
-
-
-@pytest.fixture
-def shaped_noise_gains(fs, stim_fl, stim_fh):
-    return {
-        0: 0,
-        stim_fl * 0.99: 0,
-        stim_fl: -80,
-        stim_fh: -80,
-        stim_fh / 0.99: 0,
-        fs / 2: 0,
+    kwargs = {
+        'envelope': env_window,
+        'fs': fs,
+        'duration': env_duration,
+        'rise_time': env_rise_time,
+        'input_factory': stim.SilenceFactory(fill_value=1),
     }
-
-
-def test_shaped_noise(fs, stim_level, stim_duration, shaped_noise_gains, stim_calibration):
-    if stim_duration == 0.001:
-        abs_difference = 5
-    elif stim_duration == 0.01:
-        abs_difference = 2.5
-    else:
-        abs_difference = 1
-    kwargs = dict(fs=fs, level=stim_level, gains=shaped_noise_gains,
-                  calibration=stim_calibration, duration=stim_duration)
-    _test_noise_helper(stim.shaped_noise,
-                       kwargs,
-                       pytest.approx(stim_level, abs=abs_difference),
-                       stim_calibration)
-
-
-def test_shaped_noise_factory(fs, stim_level, shaped_noise_gains,
-                              stim_calibration, chunksize, n_chunks):
-    kwargs = dict(fs=fs, level=stim_level, gains=shaped_noise_gains,
-                  calibration=stim_calibration, seed=1)
-    # Set exact to False. There seem to be some numerical precision issues, but
-    # they are less than 1e-14.
-    _test_factory(stim.ShapedNoiseFactory, kwargs, chunksize, n_chunks,
-                  exact=False)
+    assert_chunked_generation(stim.EnvelopeFactory, kwargs, chunksize,
+                              n_chunks)

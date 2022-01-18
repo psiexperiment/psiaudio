@@ -171,57 +171,61 @@ def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
     samples : int
         Number of samples to generate for envelope.
     '''
+    i_env_lb = int(round(start_time * fs))
+    i_duration = int(round(duration * fs))
+    i_env_ub = i_env_lb + i_duration
+
     if samples == 'auto':
-        samples = int(round(duration * fs))
-
-    t = (np.arange(samples, dtype=np.double) + offset)/fs
-
+        samples = i_env_lb + i_duration
 
     if rise_time is None:
-        duration_samples = int(round(duration * fs))
-        n_window = int(np.floor(duration_samples / 2))
-        rise_time = n_window / fs
+        i_rise_time = int(np.floor(i_duration / 2))
+        rise_time = i_rise_time / fs
     else:
-        n_window = int(round(rise_time * fs))
+        i_rise_time = int(round(rise_time * fs))
+
+    if i_duration < (i_rise_time * 2):
+        m = f'Rise time ({rise_time}s) longer than envelope duration ({duration}s)'
+        raise ValueError(m)
 
     if window == 'cosine-squared':
-        ramp = cos2ramp(2 * n_window)
+        ramp = cos2ramp(2 * i_rise_time)
     else:
-        ramp = getattr(signal.windows, window)(2 * n_window)
+        ramp = getattr(signal.windows, window)(2 * i_rise_time)
 
-    m_null_pre = (t < start_time)
-    m_onset = (t >= start_time) & (t < (start_time + rise_time))
+    # Maximum number of steady state samples possible to return. If it exceeds
+    # samples, clip it.
+    n_ss_max = i_duration - 2 * i_rise_time
 
-    # If duration is set to infinite, than we only apply an *onset* ramp.
-    # This is used, in particular, for the DPOAE stimulus in which we want
-    # to ramp on a continuous tone and then play it continuously until we
-    # acquire a sufficient number of epochs.
-    if duration != np.inf:
-        m_offset = (t >= (start_time+duration-rise_time)) & \
-            (t < (start_time+duration))
-        m_null_post = t >= (duration+start_time)
-    else:
-        m_offset = np.zeros_like(t, dtype=np.bool)
-        m_null_post = np.zeros_like(t, dtype=np.bool)
+    def get_i(offset, i_start):
+        return max(offset - i_start, 0)
 
-    t_null_pre = t[m_null_pre]
-    t_onset = t[m_onset] - start_time
-    t_offset = t[m_offset] - start_time
-    t_ss = t[~(m_null_pre | m_onset | m_offset | m_null_post)]
-    t_null_post = t[m_null_post]
+    def get_n(i_max, offset, i_start, max_n):
+        return np.clip(i_max - (offset - i_start), 0, min(i_max, max_n))
 
-    f_null_pre = np.zeros(len(t_null_pre))
+    n_null_pre = get_n(i_env_lb, offset, 0, samples)
+    samples -= n_null_pre
 
-    f_lower = ramp[:n_window][np.flatnonzero(m_onset)]
-    i_upper = np.flatnonzero(m_offset)
-    i_upper -= i_upper.min()
-    f_upper = ramp[n_window:][i_upper]
+    i_onset = get_i(offset, i_env_lb)
+    n_onset = get_n(i_rise_time, offset, i_env_lb, samples)
+    samples -= n_onset
 
-    f_middle = np.ones(len(t_ss))
-    f_null_post = np.zeros(len(t_null_post))
+    n_ss = get_n(n_ss_max, offset, i_env_lb + i_rise_time, samples)
+    samples -= n_ss
 
-    concat = [f_null_pre, f_lower, f_middle, f_upper, f_null_post]
-    return np.concatenate(concat, axis=-1)
+    i_offset = get_i(offset, i_env_ub - i_rise_time)
+    n_offset = get_n(i_rise_time, offset, i_env_ub - i_rise_time, samples)
+    samples -= n_offset
+
+    n_null_post = samples
+
+    return np.concatenate((
+        np.zeros(n_null_pre),
+        ramp[i_onset:i_onset+n_onset],
+        np.ones(n_ss),
+        ramp[i_rise_time+i_offset:i_rise_time+i_offset+n_offset],
+        np.zeros(n_null_post),
+    ), axis=-1)
 
 
 def cos2ramp(m):
@@ -235,20 +239,32 @@ def cos2envelope(fs, duration, rise_time, offset=0, start_time=0,
                     start_time, samples)
 
 
-class Cos2EnvelopeFactory(GateFactory):
+class EnvelopeFactory(GateFactory):
 
-    def __init__(self, fs, rise_time, duration, input_factory, start_time=0):
+    def __init__(self, envelope, fs, duration, rise_time, input_factory,
+                 start_time=0):
         self.rise_time = rise_time
+        self.envelope = envelope
         super().__init__(fs, start_time, duration, input_factory)
 
     def next(self, samples):
         token = self.input_factory.next(samples)
-        envelope = cos2envelope(self.fs, self.duration, self.rise_time,
-                                self.offset, start_time=self.start_time,
-                                samples=samples)
-        waveform = envelope*token
+        env = envelope(window=self.envelope, fs=self.fs,
+                       duration=self.duration, rise_time=self.rise_time,
+                       offset=self.offset, start_time=self.start_time,
+                       samples=samples)
+        waveform = env*token
         self.offset += samples
         return waveform
+
+
+class Cos2EnvelopeFactory(EnvelopeFactory):
+
+    def __init__(self, fs, duration, rise_time, input_factory,
+                 start_time=0):
+        super().__init__('cosine-squared', fs, duration, rise_time,
+                         input_factory, start_time)
+
 
 
 ################################################################################
