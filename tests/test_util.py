@@ -88,42 +88,6 @@ def test_rms(noise_csd, noise_signal, spectrum_level, noise_band):
     assert expected_db == pytest.approx(rms_signal)
 
 
-@pytest.mark.benchmark(group='tone-phase')
-def test_tone_phase_conv(benchmark):
-    fs = 100e3
-    f1 = 1e3
-    p1 = 0
-    t1 = make_tone(fs, f1, 1, p1)
-    benchmark(util.tone_phase_conv, t1, fs, f1)
-
-
-@pytest.mark.benchmark(group='tone-phase')
-def test_tone_phase_fft(benchmark):
-    fs = 100e3
-    f1 = 1e3
-    p1 = 0
-    t1 = make_tone(fs, f1, 1, p1)
-    benchmark(util.tone_phase_fft, t1, fs, f1)
-
-
-@pytest.mark.benchmark(group='tone-power')
-def test_tone_power_conv(benchmark):
-    fs = 100e3
-    f1 = 1e3
-    p1 = 0
-    t1 = make_tone(fs, f1, 1, p1)
-    benchmark(util.tone_power_conv, t1, fs, f1)
-
-
-@pytest.mark.benchmark(group='tone-power')
-def test_tone_power_fft(benchmark):
-    fs = 100e3
-    f1 = 1e3
-    p1 = 0
-    t1 = make_tone(fs, f1, 1, p1)
-    benchmark(util.tone_power_fft, t1, fs, f1)
-
-
 def test_tone_util():
     fs = 100e3
     f1 = 1e3
