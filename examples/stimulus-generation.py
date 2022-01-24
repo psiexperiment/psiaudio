@@ -9,7 +9,7 @@ buffer incrementially.
 '''
 
 
-import pylab as pl
+import matplotlib.pylab as plt
 
 ###############################################################################
 # Psiaudio supports several types of calibration. The simplest calibration
@@ -72,12 +72,14 @@ tone.get_duration()
 #
 # Let's get the first 5000 samples of the tone.
 waveform = tone.next(5000)
-pl.plot(waveform)
+plt.plot(waveform)
+plt.show()
 
 ###############################################################################
 # Let's get the next 1000 samples.
 waveform = tone.next(1000)
-pl.plot(waveform)
+plt.plot(waveform)
+plt.show()
 
 ###############################################################################
 # As you can see, a factory supports *incremential* generation of waveforms.
@@ -95,15 +97,16 @@ envelope = Cos2EnvelopeFactory(fs=100000, start_time=0, rise_time=5e-3,
                                duration=10, input_factory=tone)
 
 waveform = envelope.next(1000)
-pl.figure()
-pl.plot(waveform)
+plt.figure()
+plt.plot(waveform)
 
 waveform = envelope.next(1000)
-pl.figure()
-pl.plot(waveform)
+plt.figure()
+plt.plot(waveform)
 
-pl.figure()
-pl.specgram(waveform, Fs=fs);
+plt.figure()
+plt.specgram(waveform, Fs=fs);
+plt.show()
 
 ###############################################################################
 # The Cos2EnvelopeFactory has a finite duration
@@ -120,7 +123,8 @@ noise = BandlimitedNoiseFactory(fs=fs, seed=0, level=94, fl=2000,
                                 stopband_attenuation=80,
                                 equalize=False, calibration=calibration)
 waveform = noise.next(5000)
-pl.plot(waveform)
+plt.plot(waveform)
+plt.show()
 
 ###############################################################################
 # Like tone factories, the bandlimited noise factory can run forever if you
@@ -138,7 +142,8 @@ sam_envelope = SAMEnvelopeFactory(fs=fs, depth=1, fm=5,
                                   calibration=calibration,
                                   input_factory=noise)
 waveform = sam_envelope.next(fs*2)
-pl.plot(waveform)
+plt.plot(waveform)
+plt.show()
 
 ###############################################################################
 # Unlike the Cos2EnvelopeFactory, the SAMEnvelopeFactory has a finite duration.
@@ -154,18 +159,21 @@ cos_envelope = Cos2EnvelopeFactory(fs=fs, start_time=0,
 # By definition, a cosine-squared envelope has a finite duration. Let's plot
 # the first two seconds.
 waveform = cos_envelope.next(fs*2)
-pl.plot(waveform)
+plt.plot(waveform)
+plt.show()
 
 ###############################################################################
 # Now, the next two seconds.
 waveform = cos_envelope.next(fs*2)
-pl.plot(waveform)
+plt.plot(waveform)
+plt.show()
 
 ###############################################################################
 # What happens if we keep going? Remember the duration of the stimulus is only
 # 4 seconds.
 waveform = cos_envelope.next(fs*2)
-pl.plot(waveform)
+plt.plot(waveform)
+plt.show()
 
 ###############################################################################
 # That's because the stimulus is over. We can check that this is the case.
@@ -175,7 +183,8 @@ cos_envelope.is_complete()
 # What if we want to start over at the beginning? Reset it.
 cos_envelope.reset()
 waveform = cos_envelope.next(100000*4)
-pl.plot(waveform)
+plt.plot(waveform)
+plt.show()
 
 ###############################################################################
 # Not all stimuli have to be composed of individual building blocks (e.g.,
@@ -187,21 +196,21 @@ chirp = ChirpFactory(fs=100000, start_frequency=50, end_frequency=5000,
                      duration=1, level=94, calibration=calibration)
 
 waveform = chirp.next(5000)
-pl.plot(waveform)
+plt.plot(waveform)
 chirp.get_duration()
 
 ###############################################################################
 # To create your own, you would subclass `psiaudio.stim.Waveform` and implement
 # the following methods:
 #
-# * `__init__`: Where you perform potentially expensive computations (such as
-#   the filter coefficients for bandlimited noise)
-# * `reset`: Where you reset any settings that are releavant to incremential
-#    generation of the waveform (e.g., the initial state of the filter and the
-#    random number generator for bandlimited noise).
-# * `next`: Where you actually generate the waveform.
-# * `get_duration`: The duration of the waveform. Return `np.inf` if
+# * ``__init_``: Where you perform potentially expensive computations (such as
+#   the filter coefficients for bandlimited noise).
+# * ``reset``: Where you reset any settings that are releavant to incremential
+#   generation of the waveform (e.g., the initial state of the filter and the
+#   random number generator for bandlimited noise).
+# * ``next``: Where you actually generate the waveform.
+# * ``get_duration``: The duration of the waveform. Return `np.inf` if
 #   continuous.
 #
-# See the `psiaudio.stim` module for examples (e.g., `BandlimitedNoiseFactory`
-# and `ChirpFactory`).
+# See the ``psiaudio.stim`` module for examples (e.g.,
+# ``BandlimitedNoiseFactory`` and ``ChirpFactory``).
