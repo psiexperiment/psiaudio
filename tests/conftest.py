@@ -5,7 +5,7 @@ import pytest
 from psiaudio import calibration
 
 
-@pytest.fixture(scope='module', params=[25e3, 50e3, 100e3, 200e3])
+@pytest.fixture(scope='module', params=[25e3, 50e3, 100e3, 195312.5])
 def fs(request):
     return request.param
 
