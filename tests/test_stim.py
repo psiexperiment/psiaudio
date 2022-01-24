@@ -223,3 +223,46 @@ def test_envelope(fs, env_window, env_duration, env_rise_time, chunksize,
     }
     assert_chunked_generation(stim.EnvelopeFactory, kwargs, chunksize,
                               n_chunks)
+
+
+@pytest.fixture(scope='module', params=[0, 0.2, 1.0])
+def square_wave_duty_cycle(request):
+    return request.param
+
+
+def test_square_wave(fs, square_wave_duty_cycle):
+    level = 5
+    frequency = 10
+    samples = round(fs / frequency)
+
+    factory = stim.SquareWaveFactory(fs=fs, level=level, frequency=frequency,
+                                     duty_cycle=square_wave_duty_cycle)
+    waveform = factory.next(samples)
+    if square_wave_duty_cycle == 0:
+        assert set(waveform) == {0}
+    elif square_wave_duty_cycle == 1:
+        assert set(waveform) == {level}
+    else:
+        assert set(waveform) == {0, level}
+    assert waveform.mean() == pytest.approx(level * square_wave_duty_cycle)
+
+
+@pytest.fixture(scope='module', params=[0, 0.25, 0.5, 1.0])
+def sam_envelope_depth(request):
+    return request.param
+
+
+@pytest.fixture(scope='module', params=[5, 50, 500])
+def sam_envelope_fm(request):
+    return request.param
+
+
+def test_sam_envelope(benchmark, sam_envelope_depth, sam_envelope_fm):
+    offset = 0
+    samples = 400000
+    fs = 100000
+    delay = 1
+
+    result = stim.sam_envelope(offset, samples, fs, sam_envelope_depth,
+                               sam_envelope_fm, delay, equalize=True)
+    assert util.rms(result) == pytest.approx(1)
