@@ -125,38 +125,47 @@ def test_cos2envelope_factory():
     assert_array_equal(w1, w2)
 
 
-def test_cos2envelope_partial_generation(fs):
+@pytest.fixture(scope='module', params=[0.1e-3, 0.2e-3, 0.3e-3])
+def env_start_time(request):
+    return request.param
+
+
+def test_cos2envelope_partial_generation(fs, env_start_time):
     duration = 10e-3
     tone_duration = 5e-3
     rise_time = 0.5e-3
-    samples = round(duration*fs)
+    samples = int(round(duration*fs))
 
     # Make sure that the envelope is identical even if we delay the start
     y0 = stim.cos2envelope(fs, duration=tone_duration, rise_time=rise_time,
                            samples=samples)
-    for start_time in (0.1e-3, 0.2e-3, 0.3e-3):
-        y1 = stim.cos2envelope(fs, offset=0, samples=samples,
-                               start_time=start_time, rise_time=rise_time,
-                               duration=tone_duration)
-        n = round(start_time * fs)
-        np.testing.assert_allclose(y0[:-n], y1[n:])
+
+    y1 = stim.cos2envelope(fs, offset=0, samples=samples,
+                           start_time=env_start_time, rise_time=rise_time,
+                           duration=tone_duration)
+    n = int(round(env_start_time * fs))
+    np.testing.assert_allclose(y0[:-n], y1[n:])
 
     # Now, test piecemeal generation
     partition_size = 0.1e-3
     partition_samples = round(partition_size * fs)
-    n_partitions = round(samples / partition_samples)
-    for start_time in (0, 0.1e-3, 0.2e-3, 0.3e-3):
-        env = stim.Cos2EnvelopeFactory(fs, rise_time=rise_time,
-                                       duration=tone_duration,
-                                       input_factory=stim.SilenceFactory(fill_value=1),
-                                       start_time=start_time)
-        y1 = [env.next(partition_samples) for i in range(n_partitions)]
-        y1 = np.concatenate(y1)
-        n = round(start_time * fs)
-        if n > 0:
-            np.testing.assert_allclose(y0[:-n], y1[n:])
-        else:
-            np.testing.assert_allclose(y0, y1)
+    n_partitions = int(np.ceil(samples / partition_samples))
+
+    env = stim.Cos2EnvelopeFactory(fs, rise_time=rise_time,
+                                    duration=tone_duration,
+                                    input_factory=stim.SilenceFactory(fill_value=1),
+                                    start_time=env_start_time)
+
+    # Need to make sure y1 is the same length as y0 for funny sampling rates.
+    y1 = [env.next(partition_samples) for i in range(n_partitions)]
+    y1 = np.concatenate(y1)[:len(y0)]
+
+    n = int(round(env_start_time * fs))
+    print(n, y0.shape, y1.shape)
+    if n > 0:
+        np.testing.assert_allclose(y0[:-n], y1[n:])
+    else:
+        np.testing.assert_allclose(y0, y1)
 
 
 @pytest.fixture(scope='module', params=['cosine-squared', 'blackman'])
@@ -233,7 +242,7 @@ def square_wave_duty_cycle(request):
 def test_square_wave(fs, square_wave_duty_cycle):
     level = 5
     frequency = 10
-    samples = round(fs / frequency)
+    samples = int(round(fs / frequency))
 
     factory = stim.SquareWaveFactory(fs=fs, level=level, frequency=frequency,
                                      duty_cycle=square_wave_duty_cycle)
@@ -244,7 +253,8 @@ def test_square_wave(fs, square_wave_duty_cycle):
         assert set(waveform) == {level}
     else:
         assert set(waveform) == {0, level}
-    assert waveform.mean() == pytest.approx(level * square_wave_duty_cycle)
+    assert waveform.mean() == \
+        pytest.approx(level * square_wave_duty_cycle, abs=1e-4)
 
 
 @pytest.fixture(scope='module', params=[0, 0.25, 0.5, 1.0])
