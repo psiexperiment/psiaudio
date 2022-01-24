@@ -285,7 +285,7 @@ def sam_eq_phase(delay, depth, direction):
 
 
 @fast_cache
-def sam_envelope(offset, samples, fs, depth, fm, delay, eq_phase, eq_power):
+def _sam_envelope(offset, samples, fs, depth, fm, delay, eq_phase, eq_power):
     delay_n = np.clip(int(delay*fs)-offset, 0, samples)
     delay_n = int(np.round(delay_n))
     sam_n = samples-delay_n
@@ -302,6 +302,17 @@ def sam_envelope(offset, samples, fs, depth, fm, delay, eq_phase, eq_power):
     return np.concatenate((delay_envelope, sam_envelope))
 
 
+@fast_cache
+def sam_envelope(offset, samples, fs, depth, fm, delay, equalize):
+    if equalize:
+        eq_phase = sam_eq_phase(delay, depth, 1)
+        eq_power = sam_eq_power(depth)
+    else:
+        eq_phase = eq_power = 0
+    return _sam_envelope(offset, samples, fs, depth, fm, delay, eq_phase,
+                         eq_power)
+
+
 class SAMEnvelopeFactory(Modulator):
 
     def __init__(self, fs, depth, fm, delay, direction, calibration,
@@ -316,7 +327,7 @@ class SAMEnvelopeFactory(Modulator):
         self.input_factory.reset()
 
     def next(self, samples):
-        env = sam_envelope(self.offset, samples, self.fs, self.depth, self.fm,
+        env = _sam_envelope(self.offset, samples, self.fs, self.depth, self.fm,
                            self.delay, self.eq_phase, self.eq_power)
         token = self.input_factory.next(samples)
         waveform = env*token
