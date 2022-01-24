@@ -88,6 +88,14 @@ def test_flat_calibration_from_spl():
             calibration.get_sf(1e3, level)
 
 
+def test_flat_calibration_from_mv_pa():
+    calibration = FlatCalibration.from_mv_pa(1)
+    assert calibration.get_sf(1000, 94) == pytest.approx(1e-3, rel=1e-2)
+    assert calibration.get_db(1000, 1e-3) == pytest.approx(94, rel=1e-2)
+    assert calibration.get_sf(1000, 114) == pytest.approx(10e-3, rel=1e-2)
+    assert calibration.get_db(1000, 10e-3) == pytest.approx(114, rel=1e-2)
+
+
 def test_interp_calibration_from_spl_speaker():
     frequency =    np.array([500, 1000, 2000, 4000, 8000, 16000])
     measured_SPL = np.array([ 80,   90,  100,  100,   90,    80])
