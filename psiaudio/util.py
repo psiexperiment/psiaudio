@@ -1,10 +1,12 @@
 import logging
 log = logging.getLogger(__name__)
 
+from fractions import math
+from math import gcd
+
 import numpy as np
 import pandas as pd
 from scipy import signal
-from fractions import math
 
 
 def as_numeric(x):
@@ -581,3 +583,16 @@ def octave_space(lb, ub, step, mode='nearest'):
         ubi = np.floor(np.log2(ub) / step) * step
     x = np.arange(lbi, ubi+step, step)
     return 2**x
+
+
+def resample_fft(waveform, fs, target_fs):
+    n = len(waveform)
+    target_n = int(round(n * (target_fs / fs)))
+    return signal.resample(waveform, target_n, axis=-1, window='boxcar')
+
+
+def resample_poly(waveform, fs, target_fs):
+    g = gcd(fs, target_fs)
+    down = fs // g
+    up = target_fs // g
+    return signal.resample_poly(waveform, up, down, axis=-1)

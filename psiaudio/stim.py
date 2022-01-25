@@ -2,9 +2,11 @@ import logging
 log = logging.getLogger(__name__)
 
 import itertools
+from pathlib import Path
 
 import numpy as np
 from scipy import signal
+from scipy.io import wavfile
 
 from . import util
 
@@ -32,6 +34,9 @@ class Waveform:
         raise NotImplementedError
 
     def n_samples_remaining(self):
+        raise NotImplementedError
+
+    def n_samples(self):
         raise NotImplementedError
 
     def get_samples_remaining(self):
@@ -72,6 +77,9 @@ class FixedWaveform(Waveform):
     def n_samples_remaining(self):
         remaining = len(self.waveform)-self.offset
         return np.clip(remaining, 0, np.inf)
+
+    def n_samples(self):
+        return len(self.waveform)
 
     def get_duration(self):
         return len(self.waveform)/self.fs
@@ -123,6 +131,9 @@ class GateFactory(Modulator):
 
     def n_samples_remaining(self):
         return max(self.total_samples - self.offset, 0)
+
+    def n_samples(self):
+        return self.total_samples
 
     def is_complete(self):
         return self.offset >= self.total_samples
@@ -663,6 +674,29 @@ class ChirpFactory(FixedWaveform):
         # Now, compute the chirp
         self.waveform = sf*np.sin(2*np.pi*(start_frequency*t + k/2 * t**2))
         self.reset()
+
+
+################################################################################
+# Wavfiles
+################################################################################
+class WavFile(FixedWaveform):
+
+    def __init__(self, fs, filename):
+        self.filename = Path(filename)
+        file_fs, waveform = wavfile.read(filename, mmap=True)
+
+        # Rescale to range -1.0 to 1.0
+        if waveform.dtype != np.float32:
+            ii = np.iinfo(waveform.dtype)
+            waveform = waveform.astype(np.float32)
+            waveform = (waveform - ii.min) / (ii.max - ii.min) * 2 - 1
+
+        waveform_resampled = util.resample_fft(waveform, file_fs, fs)
+        super().__init__(fs, waveform_resampled)
+
+
+def wavs_from_path(fs, path):
+    return [WavFile(fs, filename) for filename in Path(path).glob('*.wav')]
 
 
 ################################################################################
