@@ -75,6 +75,10 @@ class AbstractSignalQueue:
         # need to pause stimulus generation.
         self._generated = []
 
+    @property
+    def fs(self):
+        return self._fs
+
     def get_ts(self):
         return self._samples / self._fs
 

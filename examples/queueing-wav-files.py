@@ -49,7 +49,6 @@ figure.tight_layout()
 # Now, calculate how many samples we want to pull out of the queue on each call
 # to ``AbstractSignalQueue.pop_buffer``.
 n_samples = sum(w.n_samples() for w in wavfiles)
-t = np.arange(n_samples) / fs
 
 
 ###############################################################################
@@ -59,7 +58,8 @@ t = np.arange(n_samples) / fs
 # callback that requests a fresh number of samples at a fixed interval. Note
 # that the final call returns a sequence of zeros since we have presented the
 # requested number of trials for each stimuli.
-def plot_queue(queue):
+def plot_queue(queue, n_samples):
+    t = np.arange(n_samples) / queue.fs
     figure, axes = plt.subplots(4, 1, figsize=(10, 10), sharex=True,
                                 sharey=True)
     for i, ax in enumerate(axes.flat):
@@ -80,7 +80,7 @@ def plot_queue(queue):
 
 queue = FIFOSignalQueue(fs)
 queue.extend(wavfiles, trials=3)
-plot_queue(queue)
+plot_queue(queue, n_samples)
 
 ###############################################################################
 # The next type of queue is ``BlockedFIFOSignalQueue``. The stimuli are
@@ -90,7 +90,7 @@ plot_queue(queue)
 #     A B C D E F A B C D E F A B C D E F
 queue = BlockedFIFOSignalQueue(fs)
 queue.extend(wavfiles, 3)
-plot_queue(queue)
+plot_queue(queue, n_samples)
 
 
 ###############################################################################
@@ -102,7 +102,7 @@ plot_queue(queue)
 #     A B C A B C A B C D E F D E F D E F
 queue = GroupedFIFOSignalQueue(fs, group_size=3)
 queue.extend(wavfiles, 3)
-plot_queue(queue)
+plot_queue(queue, n_samples)
 
 
 ###############################################################################
@@ -110,4 +110,6 @@ plot_queue(queue)
 # ``BlockedRandomSignalQueue``.
 queue = BlockedRandomSignalQueue(fs)
 queue.extend(wavfiles, 3)
-plot_queue(queue)
+plot_queue(queue, n_samples)
+
+plt.show()
