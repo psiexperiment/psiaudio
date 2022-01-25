@@ -511,10 +511,10 @@ class GroupedFIFOSignalQueue(FIFOSignalQueue):
     then it shifts to E F G H.
     '''
 
-    def __init__(self, group_size, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._i = -1
+    def __init__(self, fs, group_size, *args, **kwargs):
+        super().__init__(fs, *args, **kwargs)
         self._group_size = group_size
+        self._i = -1
 
     def next_key(self):
         if len(self._ordering) == 0:
@@ -538,8 +538,29 @@ class GroupedFIFOSignalQueue(FIFOSignalQueue):
             self.remove_key(key)
 
 
+class BlockedFIFOSignalQueue(GroupedFIFOSignalQueue):
+    '''
+    Like the GroupedFIFOSignalQueue except block size is automatically set to
+    the number of waveforms queued. If you have 8 waveforms queued:
+
+        A B C D E F G H
+
+    The queue iterates through A B C D E F G H until all trials have been
+    presented.
+    '''
+    def __init__(self, fs, *args, **kwargs):
+        super().__init__(fs, group_size=0, *args, **kwargs)
+
+    def append(self, *args, **kwargs):
+        self._group_size += 1
+        return super().append(*args, **kwargs)
+
+
 queues = {
     'first-in, first-out': FIFOSignalQueue,
     'interleaved first-in, first-out': InterleavedFIFOSignalQueue,
+    'blocked first-in, first-out': BlockedFIFOSignalQueue,
+    'grouped first-in, first-out': GroupedFIFOSignalQueue,
     'random': RandomSignalQueue,
+    'blocked random': BlockedRandomSignalQueue,
 }
