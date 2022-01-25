@@ -26,7 +26,7 @@ calibration = FlatCalibration.as_attenuation()
 chirp = stim.ChirpFactory(fs, start_frequency=5, end_frequency=50, duration=1,
                           level=0, calibration=calibration)
 noise = stim.BandlimitedNoiseFactory(fs, seed=0, level=0, fl=100, fh=1000,
-                                     filter_rolloff=12, passband_attenuation=1,
+                                     filter_rolloff=2, passband_attenuation=1,
                                      stopband_attenuation=80,
                                      calibration=calibration)
 noise_burst = stim.Cos2EnvelopeFactory(fs, duration=1, rise_time=0.25,

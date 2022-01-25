@@ -118,7 +118,7 @@ envelope.get_duration()
 from psiaudio.stim import BandlimitedNoiseFactory
 
 noise = BandlimitedNoiseFactory(fs=fs, seed=0, level=94, fl=2000,
-                                fh=8000,  filter_rolloff=6,
+                                fh=8000,  filter_rolloff=1,
                                 passband_attenuation=1,
                                 stopband_attenuation=80,
                                 equalize=False, calibration=calibration)
