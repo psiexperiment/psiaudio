@@ -221,6 +221,41 @@ class AbstractSignalQueue:
         self._ordering.append(k)
         return k
 
+    def extend(self, sources, trials, delays=None, duration=None,
+               metadata=None):
+
+        base_err = '{param} must be a scalar or a sequence of length {n}'
+        n = len(sources)
+
+        if np.iterable(trials):
+            if len(trials) != n:
+                raise ValueError(base_err.format('trials', n))
+        else:
+            trials = itertools.cycle([trials])
+
+        if np.iterable(delays):
+            if len(delays) != n:
+                raise ValueError(base_err.format('delays', n))
+        else:
+            delays = itertools.cycle([delays])
+
+        if np.iterable(duration):
+            if len(duration) != n:
+                raise ValueError(base_err.format('duration', n))
+        else:
+            duration = itertools.cycle([duration])
+
+        if np.iterable(metadata):
+            if len(metadata) != n:
+                raise ValueError(base_err.format('metadata', n))
+        else:
+            metadata = itertools.cycle([metadata])
+
+        uuids = []
+        for args in zip(sources, trials, delays, duration, metadata):
+            uuids.append(self.append(*args))
+        return uuids
+
     def count_factories(self):
         return len(self._ordering)
 
