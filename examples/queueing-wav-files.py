@@ -25,7 +25,7 @@ from psiaudio.queue import (BlockedRandomSignalQueue, BlockedFIFOSignalQueue,
 # instances (i.e., a subclass of ``Waveform``). Queues require all stimuli
 # to be a subclass of ``Waveform``).
 fs = 100e3
-base_path = '/media/nutshell/work/OHSU/data/LBHB/sounds/sounds_set3'
+base_path = 'wav-files'
 wavfiles = wavs_from_path(fs, base_path)
 
 # Plot each waveform to illustrate what the individual stimuli look like.
