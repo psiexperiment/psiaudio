@@ -1,9 +1,10 @@
-#!/usr/bin/env python3
-"""
+'''
+===================================================
+Using a queue to play wav files through the speaker
+===================================================
+
 Randomly shuffle the six wav files and play them continuously using the queue.
-"""
-
-
+'''
 import argparse
 import sys
 import threading
@@ -18,7 +19,7 @@ from psiaudio.queue import BlockedRandomSignalQueue
 help_text = 'Output device (numeric ID). ' \
     'To find the sound device number, type `python -m sounddevice`.'
 parser = argparse.ArgumentParser('play-wav-files')
-parser.add_argument('device', type=int, help=help_text)
+parser.add_argument('-d', '--device', type=int, help=help_text)
 args = parser.parse_args()
 
 
@@ -50,7 +51,7 @@ queue.connect(print_event, 'added')
 # Set up the metadata so that it contains the name of each wavfile that was
 # played.
 metadata = [w.filename.stem for w in wavfiles]
-queue.extend(wavfiles, 5, metadata=metadata)
+queue.extend(wavfiles, 1, metadata=metadata)
 
 ###############################################################################
 # This callback is required by sounddevice to continuously update the audio
