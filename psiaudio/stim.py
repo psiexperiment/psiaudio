@@ -694,8 +694,9 @@ class WavFile(FixedWaveform):
         # Resample if sampling rate does not match
         if fs != file_fs:
             waveform_resampled = util.resample_fft(waveform, file_fs, fs)
-
-        super().__init__(fs, waveform_resampled)
+            super().__init__(fs, waveform_resampled)
+        else:
+            super().__init__(fs, waveform)
 
 
 def wavs_from_path(fs, path):
