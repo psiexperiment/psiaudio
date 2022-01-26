@@ -66,8 +66,12 @@ class BaseCalibration:
         Frequencies that system sensitivity was measured at.
     sensitivity : 1D array
         Sensitivity of system in dB
+    attrs : {None, dict}
+        Information regarding the calibration (e.g., the filename the
+        calibration was loaded from).
     '''
-    def __init__(self, reference):
+    def __init__(self, reference, attrs=None):
+        self.attrs = attrs
         self.reference = reference
         if reference is not None:
             setattr(self, f'get_{reference.lower()}', self.get_db)
@@ -170,8 +174,8 @@ class FlatCalibration(BaseCalibration):
         sensitivity = spl - util.db(vrms)
         return cls(sensitivity, reference='SPL', **kwargs)
 
-    def __init__(self, sensitivity, fixed_gain=0, reference=None):
-        super().__init__(reference)
+    def __init__(self, sensitivity, fixed_gain=0, reference=None, attrs=None):
+        super().__init__(reference, attrs)
         self.sensitivity = sensitivity
         self.fixed_gain = fixed_gain
 
@@ -253,8 +257,9 @@ class InterpCalibration(BaseFrequencyCalibration):
         value).
     '''
     def __init__(self, frequency, sensitivity, fixed_gain=0, phase=None,
-                 fill_value=np.nan, reference=None):
-        super().__init__(reference)
+                 fill_value=np.nan, reference=None, attrs=None):
+        super().__init__(reference, attrs)
+        print(phase)
         self.frequency = np.asarray(frequency)
         self.sensitivity = np.asarray(sensitivity)
         self.fixed_gain = fixed_gain
@@ -282,8 +287,9 @@ class InterpCalibration(BaseFrequencyCalibration):
 
 class PointCalibration(BaseFrequencyCalibration):
 
-    def __init__(self, frequency, sensitivity, fixed_gain=0, reference=None):
-        super().__init__(reference)
+    def __init__(self, frequency, sensitivity, fixed_gain=0, reference=None,
+                 attrs=None):
+        super().__init__(reference, attrs)
         if np.isscalar(frequency):
             frequency = [frequency]
         if np.isscalar(sensitivity):
