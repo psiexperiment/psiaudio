@@ -11,6 +11,7 @@ requirements = [
 
 
 extras_require = {
+    'examples': ['sounddevice'],
     'docs': ['sphinx', 'sphinx_rtd_theme', 'pygments-enaml'],
     'test': ['pytest', 'pytest-benchmark'],
 }

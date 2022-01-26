@@ -691,7 +691,10 @@ class WavFile(FixedWaveform):
             waveform = waveform.astype(np.float32)
             waveform = (waveform - ii.min) / (ii.max - ii.min) * 2 - 1
 
-        waveform_resampled = util.resample_fft(waveform, file_fs, fs)
+        # Resample if sampling rate does not match
+        if fs != file_fs:
+            waveform_resampled = util.resample_fft(waveform, file_fs, fs)
+
         super().__init__(fs, waveform_resampled)
 
 
