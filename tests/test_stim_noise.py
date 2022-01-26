@@ -8,6 +8,26 @@ from psiaudio import stim, util
 from conftest import assert_chunked_generation
 
 
+@pytest.fixture(scope='module', params=[20, 80, 140])
+def stim_level(request):
+    return request.param
+
+
+@pytest.fixture(scope='module', params=[0.001, 0.1, 10])
+def stim_duration(request):
+    return request.param
+
+
+@pytest.fixture(scope='module', params=[1e3, 2e3])
+def stim_fl(request):
+    return request.param
+
+
+@pytest.fixture(scope='module', params=[6e3, 8e3])
+def stim_fh(request):
+    return request.param
+
+
 def _test_noise_helper(fn, kwargs, stim_level, stim_calibration):
     actual = fn(**kwargs)
     actual_level = stim_calibration.get_spl(1e3, util.rms(actual))
@@ -43,7 +63,7 @@ def test_broadband_noise_factory(fs, stim_level, stim_calibration, chunksize,
 
 def test_bandlimited_noise(fs, stim_level, stim_duration, stim_fl, stim_fh,
                            stim_calibration):
-    if fs in (25e3, 200e3):
+    if fs != 100e3:
         pytest.skip()
     if stim_duration == 0.001:
         abs_difference = 5
@@ -64,7 +84,7 @@ def test_bandlimited_noise(fs, stim_level, stim_duration, stim_fl, stim_fh,
 
 def test_bandlimited_noise_factory(fs, stim_level, stim_fl, stim_fh,
                                    stim_calibration, chunksize, n_chunks):
-    if fs in (25e3, 200e3):
+    if fs != 100e3:
         pytest.skip()
     kwargs = dict(fs=fs, level=stim_level, fl=stim_fl, fh=stim_fh,
                   calibration=stim_calibration, seed=1, filter_rolloff=1,

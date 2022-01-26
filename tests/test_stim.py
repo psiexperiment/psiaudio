@@ -49,6 +49,11 @@ def test_tone_factory():
     assert_array_equal(waveform, expected)
 
 
+@pytest.fixture(scope='module', params=[0, 1])
+def silence_fill_value(request):
+    return request.param
+
+
 def test_silence_factory(silence_fill_value):
     silence = stim.SilenceFactory(fill_value=silence_fill_value)
     waveform = silence.next(100)
@@ -267,7 +272,7 @@ def sam_envelope_fm(request):
     return request.param
 
 
-def test_sam_envelope(benchmark, sam_envelope_depth, sam_envelope_fm):
+def test_sam_envelope(sam_envelope_depth, sam_envelope_fm):
     offset = 0
     samples = 400000
     fs = 100000
