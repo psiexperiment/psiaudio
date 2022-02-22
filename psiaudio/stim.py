@@ -679,7 +679,7 @@ class ChirpFactory(FixedWaveform):
 ################################################################################
 # Wavfiles
 ################################################################################
-class WavFile(FixedWaveform):
+class WavFileFactory(FixedWaveform):
 
     def __init__(self, fs, filename):
         self.filename = Path(filename)
@@ -700,7 +700,7 @@ class WavFile(FixedWaveform):
 
 
 def wavs_from_path(fs, path):
-    return [WavFile(fs, filename) for filename in Path(path).glob('*.wav')]
+    return [WavFileFactory(fs, filename) for filename in Path(path).glob('*.wav')]
 
 
 ################################################################################
