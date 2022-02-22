@@ -9,6 +9,7 @@ from scipy import signal
 from scipy.io import wavfile
 
 from . import util
+from . import queue
 
 
 def fast_cache(f):
@@ -50,6 +51,21 @@ class Waveform:
 
     def is_complete(self):
         raise NotImplementedException
+
+
+class ContinuousWaveform(Waveform):
+
+    def n_samples_remaining(self):
+        return np.inf
+
+    def n_samples(self):
+        return np.inf
+
+    def get_duration(self):
+        return np.inf
+
+    def is_complete(self):
+        return False
 
 
 class FixedWaveform(Waveform):
@@ -697,6 +713,21 @@ class WavFileFactory(FixedWaveform):
             super().__init__(fs, waveform_resampled)
         else:
             super().__init__(fs, waveform)
+
+
+class WavSequenceFactory(ContinuousWaveform):
+
+    def __init__(self, fs, path):
+        self.wav_files = wavs_from_path(fs, path)
+        self.fs = fs
+        self.reset()
+
+    def reset(self):
+        self.queue = queue.BlockedRandomSignalQueue(self.fs)
+        self.queue.extend(self.wav_files, np.inf)
+
+    def next(self, samples):
+        return self.queue.pop_buffer(samples)
 
 
 def wavs_from_path(fs, path):
