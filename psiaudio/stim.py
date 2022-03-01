@@ -697,7 +697,7 @@ class ChirpFactory(FixedWaveform):
 ################################################################################
 class WavFileFactory(FixedWaveform):
 
-    def __init__(self, fs, filename):
+    def __init__(self, fs, filename, level=None, calibration=None):
         self.filename = Path(filename)
         file_fs, waveform = wavfile.read(filename, mmap=True)
 
@@ -706,6 +706,12 @@ class WavFileFactory(FixedWaveform):
             ii = np.iinfo(waveform.dtype)
             waveform = waveform.astype(np.float32)
             waveform = (waveform - ii.min) / (ii.max - ii.min) * 2 - 1
+
+        waveform = waveform / waveform.max()
+
+        if calibration is not None:
+            sf = calibration.get_sf(1e3, level)
+            waveform *= sf
 
         # Resample if sampling rate does not match
         if fs != file_fs:
@@ -717,8 +723,9 @@ class WavFileFactory(FixedWaveform):
 
 class WavSequenceFactory(ContinuousWaveform):
 
-    def __init__(self, fs, path):
-        self.wav_files = wavs_from_path(fs, path)
+    def __init__(self, fs, path, level=None, calibration=None):
+        self.wav_files = wavs_from_path(fs, path, level=level,
+                                        calibration=calibration)
         self.fs = fs
         self.reset()
 
@@ -730,8 +737,9 @@ class WavSequenceFactory(ContinuousWaveform):
         return self.queue.pop_buffer(samples)
 
 
-def wavs_from_path(fs, path):
-    return [WavFileFactory(fs, filename) for filename in Path(path).glob('*.wav')]
+def wavs_from_path(fs, path, *args, **kwargs):
+    return [WavFileFactory(fs, filename, *args, **kwargs) \
+            for filename in Path(path).glob('*.wav')]
 
 
 ################################################################################
