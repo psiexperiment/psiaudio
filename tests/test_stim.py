@@ -262,22 +262,81 @@ def test_square_wave(fs, square_wave_duty_cycle):
         pytest.approx(level * square_wave_duty_cycle, abs=1e-4)
 
 
+################################################################################
+# Square wave envelope
+################################################################################
 @pytest.fixture(scope='module', params=[0, 0.25, 0.5, 1.0])
-def sam_envelope_depth(request):
+def mod_envelope_depth(request):
     return request.param
 
 
 @pytest.fixture(scope='module', params=[5, 50, 500])
-def sam_envelope_fm(request):
+def mod_envelope_fm(request):
     return request.param
 
 
-def test_sam_envelope(sam_envelope_depth, sam_envelope_fm):
+def test_sam_envelope(mod_envelope_depth, mod_envelope_fm):
     offset = 0
     samples = 400000
     fs = 100000
     delay = 1
 
-    result = stim.sam_envelope(offset, samples, fs, sam_envelope_depth,
-                               sam_envelope_fm, delay, equalize=True)
+    result = stim.sam_envelope(offset, samples, fs, mod_envelope_depth,
+                               mod_envelope_fm, delay, equalize=True)
     assert util.rms(result) == pytest.approx(1)
+
+
+################################################################################
+# Square wave envelope
+################################################################################
+@pytest.fixture(scope='module', params=[0.1, 0.5, 0.9])
+def square_wave_duty_cycle(request):
+    return request.param
+
+
+def test_square_wave_envelope(fs, mod_envelope_depth, mod_envelope_fm,
+                              square_wave_duty_cycle, offset=0):
+    result = stim.square_wave(fs, offset, int(fs * 2), mod_envelope_depth,
+                              mod_envelope_fm, square_wave_duty_cycle)
+    expected_average = square_wave_duty_cycle + \
+        (1 - mod_envelope_depth) * (1 - square_wave_duty_cycle)
+
+    # For sampling rates that are not a clean multiple of the modulation
+    # frequency, we will not get *exactly* the expected average.
+    if fs == 195312.5:
+        expected_average = pytest.approx(expected_average, abs=0.005)
+        expected_fm = pytest.approx(mod_envelope_fm, abs=0.005)
+        expected_duty_cycle = pytest.approx(square_wave_duty_cycle, abs=0.005)
+        # allow for 1-sample errors due to uneven sampling rates
+        expected_start_jitter = pytest.approx(0, abs=1)
+    else:
+        expected_fm = mod_envelope_fm
+        expected_duty_cycle = square_wave_duty_cycle
+        expected_start_jitter = pytest.approx(0, abs=0)
+
+    assert np.mean(result) == expected_average
+    assert np.min(result) == (1 - mod_envelope_depth)
+    assert np.max(result) == 1
+
+    if mod_envelope_depth != 0:
+        plateau = (result == 1).astype('i')
+        starts = np.flatnonzero(np.diff(plateau) == 1)
+        ends = np.flatnonzero(np.diff(plateau) == -1)
+
+        starts_iti = np.diff(starts)
+        ends_iti = np.diff(ends)
+
+        assert (starts_iti - starts_iti[0]) == expected_start_jitter
+        assert (ends_iti - ends_iti[0]) == expected_start_jitter
+
+        assert (fs / starts_iti.mean()) == expected_fm
+        assert (fs / ends_iti.mean()) == expected_fm
+
+        # Discard first end. Since "offset" is 0, we don't have the ability to
+        # detect the first start value.
+        ends = ends[1:]
+
+        plateau_samples = (ends - starts)
+        assert plateau_samples == pytest.approx(plateau_samples[0], abs=0)
+        duty_cycle = plateau_samples[0] / (fs / mod_envelope_fm)
+        assert duty_cycle == expected_duty_cycle

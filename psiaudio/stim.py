@@ -132,6 +132,18 @@ class Modulator(Waveform):
     def is_complete(self):
         return self.input_factory.is_complete()
 
+    def reset(self):
+        self.offset = 0
+        self.input_factory.reset()
+
+    def next(self, samples):
+        waveform = self.env(samples) * self.input_factory.next(samples)
+        self.offset += len(waveform)
+        return waveform
+
+    def env(self, samples):
+        raise NotImplementedError
+
 
 class GateFactory(Modulator):
 
@@ -153,10 +165,6 @@ class GateFactory(Modulator):
 
     def is_complete(self):
         return self.offset >= self.total_samples
-
-    def reset(self):
-        self.offset = 0
-        self.input_factory.reset()
 
     def next(self, samples):
         token = self.input_factory.next(samples)
@@ -349,17 +357,36 @@ class SAMEnvelopeFactory(Modulator):
         self.eq_power = sam_eq_power(depth)
         self.reset()
 
-    def reset(self):
-        self.offset = 0
-        self.input_factory.reset()
+    def env(self, samples):
+        return _sam_envelope(self.offset, samples, self.fs, self.depth,
+                             self.fm, self.delay, self.eq_phase, self.eq_power)
 
-    def next(self, samples):
-        env = _sam_envelope(self.offset, samples, self.fs, self.depth, self.fm,
-                           self.delay, self.eq_phase, self.eq_power)
-        token = self.input_factory.next(samples)
-        waveform = env*token
-        self.offset += len(waveform)
-        return waveform
+
+################################################################################
+# Square wave envelope
+################################################################################
+def square_wave(fs, offset, samples, depth, fm, duty_cycle):
+    fm_samples = fs / fm
+    duty_samples = int(round(duty_cycle * fm_samples))
+    log.info('Actual modulation frequency %.1f', fs/fm_samples)
+
+    env = np.full(samples, 1-depth, dtype=np.double)
+    fm_start = fm_samples * (offset // fm_samples) - offset
+    for t in np.arange(fm_start, samples, fm_samples):
+        t = int(np.round(t))
+        lb = np.clip(t, 0, samples)
+        ub = np.clip(t + duty_samples, 0, samples)
+        env[lb:ub] = 1
+    return env
+
+class SquareWaveEnvelopeFactory(Modulator):
+
+    def __init__(self, fs, depth, fm, duty_cycle, calibration, input_factory):
+        vars(self).update(locals())
+
+    def env(self, samples):
+        return square_wave(self.fs, self.offset, samples, self.depth, self.fm,
+                           self.duty_cycle)
 
 
 ################################################################################
