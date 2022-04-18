@@ -259,7 +259,6 @@ class InterpCalibration(BaseFrequencyCalibration):
     def __init__(self, frequency, sensitivity, fixed_gain=0, phase=None,
                  fill_value=np.nan, reference=None, attrs=None):
         super().__init__(reference, attrs)
-        print(phase)
         self.frequency = np.asarray(frequency)
         self.sensitivity = np.asarray(sensitivity)
         self.fixed_gain = fixed_gain
