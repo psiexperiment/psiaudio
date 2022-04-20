@@ -558,7 +558,9 @@ def process_tone(fs, signal, frequency, min_snr=None, max_thd=None,
     else:
         return pd.DataFrame(data)
 
-
+################################################################################
+# Octave functions (typically used for generating octave frequencies)
+################################################################################
 def octave_space(lb, ub, step, mode='nearest'):
     '''
     >>> print(octave_space(4, 32, 1.0))
@@ -584,6 +586,75 @@ def octave_space(lb, ub, step, mode='nearest'):
         ubi = np.floor(np.log2(ub) / step) * step
     x = np.arange(lbi, ubi+step, step)
     return 2**x
+
+
+def interleave_octaves(freqs, min_octaves=1):
+    '''
+    Return correct ordering for frequencies in interleaved paradigm as per.
+    Buran et al.
+
+    This function works with both kHz and Hz.
+    >>> interleave_octaves([2, 2.8, 4, 5.6, 8])
+    [8, 4, 2, 5.6, 2.8]
+    >>> interleave_octaves([2000, 2800, 4000, 5600, 8000])
+    [8000, 4000, 2000, 5600, 2800]
+
+    If a set of frequencies cannot appropriately be ordered, a ValueError is
+    raised. In this example, the first and last frequences are within one
+    octave.
+    >>> interleave_octaves([2000, 2800, 4000])
+    Traceback (most recent call last):
+      ...
+    ValueError: Unable to interleave 4000, 2000, 2800 appropriately.
+
+    You can use a different octave spacing.
+    >>> interleave_octaves([2000, 2800, 4000], 0.5)
+    [4000, 2800, 2000]
+    '''
+    freqs = list(freqs).copy()
+    freqs.sort()
+    space = np.median(np.diff(np.log2(freqs)))
+    freqs = freqs[::-1]
+    n_groups = int(np.round(min_octaves/space))
+
+    ordered = []
+    for i in range(n_groups):
+        ordered.extend(freqs[i::n_groups])
+    if not check_interleaved_octaves(ordered, min_octaves):
+        ordered = ', '.join(str(f) for f in ordered)
+        m = f'Unable to interleave {ordered} appropriately.'
+        raise ValueError(m)
+    return ordered
+
+
+def check_interleaved_octaves(freqs, min_octaves=1):
+    '''
+    Ensure that frequencies are spaced at least an octave apart
+
+    Parameters
+    ----------
+    freqs : ordered sequence
+        Sequence of frequencies in the desired ordering.
+    min_octaves : float
+        Minimum octave spacing to enforce (this is multiplied by 0.95 to allow
+        for some fudge factor if frequencies were rounded).
+
+    Notes
+    -----
+    * If you are rounding frequencies to the nearest Hz, the actual octaves
+      spacing may be slightly less or more than the desired spacing due to the
+      rounding. We multiply `min_octaves` by 0.99 to allow for this small error
+      in octave spacing.
+    * This also checks that the last frequency is an octave from the first
+      frequency.
+    '''
+    check = freqs.copy()
+    # Ensure octave spacing between end of trial and beginning of next trial
+    check += [check[0]]
+    octaves = np.abs(np.diff(np.log2(check)))
+    return not np.any(octaves < (min_octaves * 0.95))
+
+
 
 
 def resample_fft(waveform, fs, target_fs):
