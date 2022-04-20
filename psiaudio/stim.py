@@ -301,7 +301,6 @@ class Cos2EnvelopeFactory(EnvelopeFactory):
                          input_factory, start_time)
 
 
-
 ################################################################################
 # SAM envelope
 ################################################################################
@@ -368,7 +367,6 @@ class SAMEnvelopeFactory(Modulator):
 def square_wave(fs, offset, samples, depth, fm, duty_cycle):
     fm_samples = fs / fm
     duty_samples = int(round(duty_cycle * fm_samples))
-    log.info('Actual modulation frequency %.1f', fs/fm_samples)
 
     env = np.full(samples, 1-depth, dtype=np.double)
     fm_start = fm_samples * (offset // fm_samples) - offset
@@ -378,6 +376,7 @@ def square_wave(fs, offset, samples, depth, fm, duty_cycle):
         ub = np.clip(t + duty_samples, 0, samples)
         env[lb:ub] = 1
     return env
+
 
 class SquareWaveEnvelopeFactory(Modulator):
 
