@@ -32,16 +32,16 @@ def dbtopa(db):
 
     .. math:: 10^(dB/20.0)/20e-6
 
-    >>> print dbtopa(100)
+    >>> dbtopa(100)
     2.0
-    >>> print dbtopa(120)
+    >>> dbtopa(120)
     20.0
-    >>> print patodb(dbtopa(94.0))
+    >>> patodb(dbtopa(94.0))
     94.0
 
     Will also take sequences:
-    >>> print dbtopa([80, 100, 120])
-    [  0.2   2.   20. ]
+    >>> print(dbtopa([80, 100, 120]))
+    [ 0.2  2.  20. ]
     '''
     return dbi(db, 20e-6)
 
@@ -52,16 +52,16 @@ def patodb(pa):
 
     .. math:: 20*log10(pa/20e-6)
 
-    >>> print round(patodb(1))
-    94.0
-    >>> print patodb(2)
+    >>> round(patodb(1))
+    94
+    >>> patodb(2)
     100.0
-    >>> print patodb(0.2)
+    >>> patodb(0.2)
     80.0
 
     Will also take sequences:
-    >>> print patodb([0.2, 2.0, 20.0])
-    [  80.  100.  120.]
+    >>> print(patodb([0.2, 2.0, 20.0]))
+    [ 80. 100. 120.]
     '''
     return db(pa, 20e-6)
 
@@ -561,14 +561,15 @@ def process_tone(fs, signal, frequency, min_snr=None, max_thd=None,
 
 def octave_space(lb, ub, step, mode='nearest'):
     '''
-    >>> freq = octave_space(4, 32, 1)
-    >>> print(freq)
+    >>> print(octave_space(4, 32, 1.0))
     [ 4.  8. 16. 32.]
+
     >>> freq = octave_space(0.5, 50.0, 0.25, 'nearest')
     >>> print(round(min(freq), 2))
     0.5
     >>> print(round(max(freq), 2))
     53.82
+
     >>> freq = octave_space(0.5, 50.0, 0.25, 'bounded')
     >>> print(round(min(freq), 2))
     0.5
