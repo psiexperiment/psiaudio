@@ -1,6 +1,7 @@
 import logging
 log = logging.getLogger(__name__)
 
+from functools import partial
 import itertools
 from pathlib import Path
 
@@ -721,30 +722,41 @@ class ChirpFactory(FixedWaveform):
 ################################################################################
 # Wavfiles
 ################################################################################
+@fast_cache
+def load_wav(fs, filename, level, calibration):
+    log.warning('Loading %s', filename)
+    file_fs, waveform = wavfile.read(filename, mmap=True)
+
+    # Rescale to range -1.0 to 1.0
+    if waveform.dtype != np.float32:
+        ii = np.iinfo(waveform.dtype)
+        waveform = waveform.astype(np.float32)
+        waveform = (waveform - ii.min) / (ii.max - ii.min) * 2 - 1
+
+    waveform = waveform / waveform.max()
+
+    if calibration is not None:
+        sf = calibration.get_sf(1e3, level)
+        waveform *= sf
+
+    # Resample if sampling rate does not match
+    if fs != file_fs:
+        waveform_resampled = util.resample_fft(waveform, file_fs, fs)
+        return waveform_resampled
+
+
 class WavFileFactory(FixedWaveform):
 
     def __init__(self, fs, filename, level=None, calibration=None):
-        self.filename = Path(filename)
-        file_fs, waveform = wavfile.read(filename, mmap=True)
+        self.fs = fs
+        self.filename = filename
+        self.level = level
+        self.calibration = calibration
+        self.reset()
 
-        # Rescale to range -1.0 to 1.0
-        if waveform.dtype != np.float32:
-            ii = np.iinfo(waveform.dtype)
-            waveform = waveform.astype(np.float32)
-            waveform = (waveform - ii.min) / (ii.max - ii.min) * 2 - 1
-
-        waveform = waveform / waveform.max()
-
-        if calibration is not None:
-            sf = calibration.get_sf(1e3, level)
-            waveform *= sf
-
-        # Resample if sampling rate does not match
-        if fs != file_fs:
-            waveform_resampled = util.resample_fft(waveform, file_fs, fs)
-            super().__init__(fs, waveform_resampled)
-        else:
-            super().__init__(fs, waveform)
+    @property
+    def waveform(self):
+        return load_wav(self.fs, self.filename, self.level, self.calibration)
 
 
 class WavSequenceFactory(ContinuousWaveform):
