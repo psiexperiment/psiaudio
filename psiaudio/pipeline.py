@@ -101,7 +101,9 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
             else:
                 epoch_coroutines.pop(md)
                 n_pop += 1
-        log.debug('Marked %d epochs for removal, removed %d epochs', n_remove, n_pop)
+
+        if n_remove or n_pop:
+            log.debug('Marked %d epochs for removal, removed %d epochs', n_remove, n_pop)
 
         # Send the data to each coroutine. If a StopIteration occurs,
         # this means that the epoch has successfully been acquired and has
@@ -149,7 +151,8 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
             except StopIteration:
                 pass
 
-        log.debug('Queued %d epochs, %d were invalid', n_queued, n_invalid)
+        if n_queued or n_invalid:
+            log.debug('Queued %d epochs, %d were invalid', n_queued, n_invalid)
 
         tlb = tlb + data.shape[-1]
 

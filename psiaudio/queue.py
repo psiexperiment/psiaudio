@@ -393,7 +393,7 @@ class AbstractSignalQueue:
             self._samples += len(waveform)
             waveforms.append(waveform)
         waveform = np.concatenate(waveforms, axis=-1)
-        log.debug('Generated %d samples', len(waveform))
+        log.trace('Generated %d samples', len(waveform))
         return waveform
 
     def _pop_buffer(self, samples, decrement):
