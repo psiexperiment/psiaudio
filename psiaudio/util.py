@@ -80,7 +80,7 @@ def normalize_rms(waveform, out=None):
 
 
 def csd(s, window=None, waveform_averages=None, detrend='linear'):
-    if waveform_averages is not None:
+    if waveform_averages is not None and waveform_averages != 1:
         new_shape = (waveform_averages, -1) + s.shape[1:]
         s = s.reshape(new_shape).mean(axis=0)
     if detrend is not None:
