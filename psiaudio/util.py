@@ -115,13 +115,16 @@ def phase(s, fs, window=None, waveform_averages=None, unwrap=True):
     return _phase(c, unwrap)
 
 
-def _psd(csd):
-    return np.abs(csd)
-
-
-def psd(s, fs, window=None, waveform_averages=None):
-    c = csd(s, window, waveform_averages)
-    return _psd(c)
+def psd(s, fs, window=None, waveform_averages=None, trim_samples=True):
+    if waveform_averages is None:
+        waveform_averages = 1
+    if trim_samples:
+        n = (s.shape[-1] // waveform_averages) * waveform_averages
+        s = s[..., :n]
+    new_shape = (waveform_averages, -1) + s.shape[1:]
+    s = s.reshape(new_shape)
+    c = csd(s, window)
+    return np.abs(c).mean(axis=0)
 
 
 def psd_freq(s, fs):
@@ -139,9 +142,12 @@ def csd_df(s, fs, *args, **kw):
         return pd.DataFrame(c, columns=freqs, index=index)
 
 
-def psd_df(s, fs, *args, **kw):
-    p = psd(s, fs, *args, **kw)
-    freqs = pd.Index(psd_freq(s, fs), name='frequency')
+def psd_df(s, fs, *args, waveform_averages=None, **kw):
+    p = psd(s, fs, *args, waveform_averages=waveform_averages, **kw)
+    n = s.shape[-1]
+    if waveform_averages is not None:
+        n = n // waveform_averages
+    freqs = pd.Index(np.fft.rfftfreq(n, 1/fs), name='frequency')
     if p.ndim == 1:
         name = s.name if isinstance(s, pd.Series) else 'psd'
         return pd.Series(p, index=freqs, name=name)

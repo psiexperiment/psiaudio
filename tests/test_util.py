@@ -59,6 +59,17 @@ def test_fft_tone():
     assert psd.idxmax() == 4000
 
 
+def test_fft_tone_averages(fs):
+    frequency = 1e3
+    duration = np.round(fs * 4) / fs
+    tone = make_tone(fs, frequency, duration)
+    psd = util.psd_df(tone, fs, waveform_averages=4, trim_samples=True, window='flattop')
+    # The absolute tolerance is required for the case where sampling rate is
+    # 195312.5 Hz (i.e., on a TDT RZ6 system).
+    assert psd.max() == pytest.approx(1 / np.sqrt(2), abs=1e-4)
+    assert psd.idxmax() == pytest.approx(frequency, abs=1e-2)
+
+
 def test_band_to_spectrum_level_roundtrip(spectrum_level, noise_band):
     band_level = util.spectrum_to_band_level(spectrum_level, *noise_band)
     spectrum_level_rt = util.band_to_spectrum_level(band_level, *noise_band)
