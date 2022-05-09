@@ -515,7 +515,7 @@ class GroupedFIFOSignalQueue(FIFOSignalQueue):
     then it shifts to E F G H.
     '''
 
-    def __init__(self, fs, group_size, *args, **kwargs):
+    def __init__(self, group_size, fs=None, *args, **kwargs):
         super().__init__(fs, *args, **kwargs)
         self._group_size = group_size
         self._i = -1
@@ -552,7 +552,7 @@ class BlockedFIFOSignalQueue(GroupedFIFOSignalQueue):
     The queue iterates through A B C D E F G H until all trials have been
     presented.
     '''
-    def __init__(self, fs, *args, **kwargs):
+    def __init__(self, fs=None, *args, **kwargs):
         super().__init__(fs, group_size=0, *args, **kwargs)
 
     def append(self, *args, **kwargs):
