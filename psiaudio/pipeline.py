@@ -200,7 +200,6 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
             info['poststim_time'] = poststim_time
             info['epoch_size'] = epoch_size if epoch_size else info['duration']
             total_epoch_size = info['epoch_size'] + poststim_time
-            log.error(info)
             epoch_samples = round(total_epoch_size * fs)
             epoch_coroutine = capture_epoch(t0, epoch_samples, info,
                                             epochs.append)
