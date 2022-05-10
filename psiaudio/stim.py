@@ -694,6 +694,33 @@ class SquareWaveFactory(Carrier):
 
 
 ################################################################################
+# Repeat
+################################################################################
+class RepeatFactory(FixedWaveform):
+
+    def __init__(self, fs, n, skip_n, rate, input_factory):
+        vars(self).update(locals())
+        self.reset()
+
+    def get_duration(self):
+        return (self.n + self.skip_n) / self.rate
+
+    def reset(self):
+        self.offset = 0
+        self.input_factory.reset()
+        waveform = self.input_factory.get_samples_remaining()
+        self.waveform = repeat(waveform, self.fs, self.n, self.skip_n, self.rate)
+
+
+def repeat(waveform, fs, n, skip_n, rate):
+    s_period = int(round(fs / rate))
+    s_waveform = len(waveform)
+    result = np.zeros((n + skip_n, s_period))
+    result[skip_n:, :s_waveform] = waveform
+    return result.ravel()
+
+
+################################################################################
 # Chirp
 ################################################################################
 class ChirpFactory(FixedWaveform):
