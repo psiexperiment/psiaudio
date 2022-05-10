@@ -2,7 +2,36 @@ import logging
 log = logging.getLogger(__name__)
 
 from collections import deque
+
 import numpy as np
+
+
+class PipelineData(np.ndarray):
+
+    def __new__(cls, arr, info=None, metadata=None):
+        obj = np.asarray(arr).view(cls)
+        obj.metadata = metadata if metadata else {}
+        obj.info = info if info else {}
+        return obj
+
+    def __getitem__(self, s):
+        obj = super().__getitem__(s)
+        # This will be the case when s is just an integer, not a slice.
+        if not hasattr(obj, 'info'):
+            return obj
+        if isinstance(s, tuple):
+            s = s[-1]
+        if isinstance(s, slice):
+            if s.start is not None and 't0_sample' in obj.info:
+                obj.info['t0_sample'] += (s.start % self.shape[-1])
+            if s.step is not None and 'fs' in obj.info:
+                obj.info['fs'] /= s.step
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None: return
+        self.metadata = getattr(obj, 'metadata', {}).copy()
+        self.info = getattr(obj, 'info', {}).copy()
 
 
 def coroutine(func):
@@ -15,9 +44,29 @@ def coroutine(func):
 
 
 @coroutine
-def capture_epoch(epoch_t0, epoch_samples, info, callback):
+def capture_epoch(epoch_t0, epoch_samples, info, callback, auto_send=False):
     '''
     Coroutine to facilitate epoch acquisition
+
+    This was written as a supporting function for `extract_epochs` (i.e., it
+    creates one `capture_epoch` for each epoch it is looking for), but can also
+    be used stand-alone to capture single epochs.
+
+    Parameters
+    ----------
+    epoch_t0 : float
+        Starting time of epoch.
+    epoch_samples : int
+        Number of samples to capture.
+    info : dict
+        Dictionary of metadata that will be passed along to downstream
+        coroutines (i.e., the callback).
+    callback : callable
+        Callable that receives a single argument. The argument will be a
+        dictionary with two keys (`signal` and `info`) where `signal` is the
+        epoch and `info` is information regarding the epoch.
+    auto_send : bool
+        If true, automatically send samples as they are acquired.
     '''
     # This coroutine will continue until it acquires all the samples it needs.
     # It then provides the samples to the callback function and exits the while
@@ -49,11 +98,18 @@ def capture_epoch(epoch_t0, epoch_samples, info, callback):
             epoch_t0 += d
             epoch_samples -= d
 
-            # Check to see if we've finished acquiring the entire epoch. If so,
-            # send it to the callback.
-            if epoch_samples == 0:
+            if auto_send:
                 accumulated_data = np.concatenate(accumulated_data, axis=-1)
-                callback({'signal': accumulated_data, 'info': info})
+                callback(accumulated_data)
+                accumulated_data = []
+                if epoch_samples == 0:
+                    break
+
+            elif epoch_samples == 0:
+                accumulated_data = np.concatenate(accumulated_data, axis=-1)
+                md = info.pop('metadata', {})
+                d = PipelineData(accumulated_data, info=info, metadata=md)
+                callback(d)
                 break
 
 
@@ -66,7 +122,16 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
     # start at sample 300,000 (remember that Python is zero-based indexing, so
     # the first sample has an index of 0).
     tlb = 0
+
+    # This tracks the epochs that we are looking for. The key will be a
+    # two-element tuple. key[0] is the starting time of the epoch to capture
+    # and key[1] is a universally unique identifier. The key may be None, in
+    # which case, you will not have the ability to capture two different epochs
+    # that begin at the exact same time.
     epoch_coroutines = {}
+
+    # Maintain a buffer of prior samples that can be used to retroactively
+    # capture the start of an epoch if needed.
     prior_samples = []
 
     # How much historical data to keep (for retroactively capturing epochs)
@@ -86,20 +151,21 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
         data = (yield)
         prior_samples.append((tlb, data))
 
-        # First, check to see what needs to be removed from
-        # epoch_coroutines. If it doesn't exist, it may already have been
-        # captured.
+        # First, check to see what needs to be removed from epoch_coroutines.
+        # If it doesn't exist, it may already have been captured.
         skip = []
         n_remove = 0
         n_pop = 0
         while removed_queue:
             info = removed_queue.popleft()
-            md = info['t0'], info['key']
-            if md not in epoch_coroutines:
+
+            # This is a uinique 
+            key = info['t0'], info.get('key', None)
+            if key not in epoch_coroutines:
                 n_remove += 1
-                skip.append(md)
+                skip.append(key)
             else:
-                epoch_coroutines.pop(md)
+                epoch_coroutines.pop(key)
                 n_pop += 1
 
         if n_remove or n_pop:
@@ -122,7 +188,7 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
         n_invalid = 0
         while queue:
             info = queue.popleft()
-            key = info['t0'], info['key']
+            key = info['t0'], info.get('key', None)
             if key in skip:
                 skip.remove(key)
                 n_invalid += 1
@@ -134,6 +200,7 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
             info['poststim_time'] = poststim_time
             info['epoch_size'] = epoch_size if epoch_size else info['duration']
             total_epoch_size = info['epoch_size'] + poststim_time
+            log.error(info)
             epoch_samples = round(total_epoch_size * fs)
             epoch_coroutine = capture_epoch(t0, epoch_samples, info,
                                             epochs.append)
