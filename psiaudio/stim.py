@@ -401,6 +401,8 @@ class BroadbandNoiseFactory(Carrier):
         self.level = level
         self.seed = seed
         self.calibration = calibration
+        if equalize:
+            raise ValueError('Not implemented')
 
         if calibration is None:
             self.sf = level
