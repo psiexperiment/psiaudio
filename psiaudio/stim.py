@@ -396,11 +396,13 @@ class BroadbandNoiseFactory(Carrier):
     '''
     Factory for generating continuous bandlimited noise
     '''
-    def __init__(self, fs, level, seed=1, calibration=None):
+    def __init__(self, fs, level, seed=1, equalize=False, polarity=1, calibration=None):
         self.fs = fs
         self.level = level
         self.seed = seed
         self.calibration = calibration
+        self.polarity = polarity
+
         if equalize:
             raise ValueError('Not implemented')
 
@@ -425,13 +427,14 @@ class BroadbandNoiseFactory(Carrier):
         self.state = np.random.RandomState(self.seed)
 
     def next(self, samples):
-        return self.state.uniform(low=self.low, high=self.high, size=samples)
+        return self.polarity * self.state.uniform(low=self.low, high=self.high, size=samples)
 
 
-def broadband_noise(fs, level, duration, seed=1, calibration=None):
-    args = locals()
-    args.pop('duration')
-    factory = BroadbandNoiseFactory(**args)
+def broadband_noise(fs, level, duration, seed=1, equalize=False, polarity=1,
+                    calibration=None):
+    kwargs = locals()
+    kwargs.pop('duration')
+    factory = BroadbandNoiseFactory(**kwargs)
     samples = int(round(duration * fs))
     return factory.next(samples)
 
@@ -466,7 +469,7 @@ class BandlimitedNoiseFactory(Carrier):
     '''
     def __init__(self, fs, seed, level, fl, fh, filter_rolloff,
                  passband_attenuation, stopband_attenuation, equalize=False,
-                 calibration=None, discard_initial_samples=True):
+                 polarity=1, calibration=None, discard_initial_samples=True):
 
         self.fs = fs
         self.level = level
@@ -476,6 +479,7 @@ class BandlimitedNoiseFactory(Carrier):
         self.passband_attenuation = passband_attenuation
         self.stopband_attenuation = stopband_attenuation
         self.equalize = equalize
+        self.polarity = polarity
         self.calibration = calibration
         self.fl = fl
         self.fh = fh
@@ -528,12 +532,12 @@ class BandlimitedNoiseFactory(Carrier):
         if self.equalize:
             waveform, self.iir_zi = signal.lfilter(self.iir, [1], waveform, zi=self.iir_zi)
         waveform, self.bp_zi = signal.lfilter(self.b, self.a, waveform, zi=self.bp_zi)
-        return waveform
+        return waveform * self.polarity
 
 
 def bandlimited_noise(fs, level, fl, fh, duration, filter_rolloff=1,
                       passband_attenuation=1, stopband_attenuation=80,
-                      equalize=False, seed=1, calibration=None):
+                      equalize=False, polarity=1, seed=1, calibration=None):
     args = locals()
     args.pop('duration')
     factory = BandlimitedNoiseFactory(**args)
@@ -557,7 +561,7 @@ class ShapedNoiseFactory(Carrier):
     Factory for generating continuous shaped noise using FIR filters.
     '''
     def __init__(self, fs, level, gains, ntaps=10001, window='hanning',
-                 seed=None, calibration=None):
+                 polarity=1, seed=None, calibration=None):
 
         self.fs = fs
         self.level = level
@@ -565,6 +569,7 @@ class ShapedNoiseFactory(Carrier):
         self.ntaps = ntaps
         self.window = window
         self.seed = seed
+        self.polarity = polarity
         self.calibration = calibration
 
         self.taps, self.initial_zi = _calculate_firwin2_taps(gains, fs, window, ntaps)
@@ -592,11 +597,11 @@ class ShapedNoiseFactory(Carrier):
     def next(self, samples):
         waveform = self.state.uniform(low=-self.scale, high=self.scale, size=samples)
         waveform, self.zi = signal.lfilter(self.taps, [1], waveform, zi=self.zi)
-        return waveform
+        return waveform * self.polarity
 
 
 def shaped_noise(fs, level, gains, duration, ntaps=10001, window='hanning',
-                 seed=1, calibration=None):
+                 polarity=1, seed=1, calibration=None):
     args = locals()
     args.pop('duration')
     factory = ShapedNoiseFactory(**args)
