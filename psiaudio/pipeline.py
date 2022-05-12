@@ -4,34 +4,85 @@ log = logging.getLogger(__name__)
 from collections import deque
 
 import numpy as np
+from scipy import signal
 
 
 class PipelineData(np.ndarray):
 
-    def __new__(cls, arr, info=None, metadata=None):
+    def __new__(cls, arr, fs, s0=0, metadata=None):
         obj = np.asarray(arr).view(cls)
         obj.metadata = metadata if metadata else {}
-        obj.info = info if info else {}
+        obj.fs = fs
+        obj.s0 = s0
         return obj
 
     def __getitem__(self, s):
         obj = super().__getitem__(s)
         # This will be the case when s is just an integer, not a slice.
-        if not hasattr(obj, 'info'):
+        if not hasattr(obj, 'metadata'):
             return obj
         if isinstance(s, tuple):
             s = s[-1]
         if isinstance(s, slice):
-            if s.start is not None and 't0_sample' in obj.info:
-                obj.info['t0_sample'] += (s.start % self.shape[-1])
-            if s.step is not None and 'fs' in obj.info:
-                obj.info['fs'] /= s.step
+            if s.start is not None:
+                obj.s0 += s.start
+            if s.step is not None:
+                obj.fs /= s.step
         return obj
 
     def __array_finalize__(self, obj):
         if obj is None: return
+        self.fs = getattr(obj, 'fs', None)
+        self.s0 = getattr(obj, 's0', None)
         self.metadata = getattr(obj, 'metadata', {}).copy()
-        self.info = getattr(obj, 'info', {}).copy()
+
+    #def __array_ufunc__(self, ufunc, method, *args, **kwargs):
+    #    results = super().__array_ufunc__(ufunc, method, *args, **kwargs)
+    #    return results
+
+    def mean(self, axis=None, *args, **kwargs):
+        if axis != -1:
+            raise NotImplementedError('Cannot average along other axes yet')
+        n = self.shape[-1]
+        result = super().mean(axis, *args, **kwargs)
+        result.fs /= n
+        result.s0 /= n
+        return result
+
+    def __repr__(self):
+        result = super().__repr__()
+        result = f'{result}\n > s0: {self.s0}, fs: {self.fs}, shape: {self.shape}'
+        return result
+
+    def __str__(self):
+        result = super().__str__()
+        result = f'{result}\n > s0: {self.s0}, fs: {self.fs}, shape: {self.shape}'
+        return result
+
+
+def concat(arrays, axis=-1):
+    if axis != -1:
+        raise NotImplementedError('Cannot concat along other axes yet')
+
+    is_pipeline_data = [isinstance(a, PipelineData) for a in arrays]
+    if not any(is_pipeline_data):
+        return np.concatenate(arrays, axis=axis)
+    if not all(is_pipeline_data):
+        raise ValueError('Cannot concatenate pipeline and non-pipeline data')
+
+    base_fs = arrays[0].fs
+    base_s0 = arrays[0].s0
+
+    current_s0 = base_s0 + arrays[0].shape[-1]
+    for a in arrays[1:]:
+        if a.fs != base_fs:
+            raise ValueError('Cannot concatenate inputs with different sampling rates')
+        if a.s0 != current_s0:
+            raise ValueError(f'First sample of each array is not aligned (expected {current_s0}, found {a.s0})')
+        current_s0 += a.shape[-1]
+
+    result = np.concatenate(arrays, axis=axis)
+    return PipelineData(result, base_fs, base_s0)
 
 
 def coroutine(func):
@@ -44,9 +95,10 @@ def coroutine(func):
 
 
 @coroutine
-def capture_epoch(epoch_t0, epoch_samples, info, callback, auto_send=False):
+def capture_epoch(epoch_t0, epoch_samples, info, callback, fs=None,
+                  auto_send=False):
     '''
-    Coroutine to facilitate epoch acquisition
+    Coroutine to facilitate capture of a single epoch
 
     This was written as a supporting function for `extract_epochs` (i.e., it
     creates one `capture_epoch` for each epoch it is looking for), but can also
@@ -108,7 +160,7 @@ def capture_epoch(epoch_t0, epoch_samples, info, callback, auto_send=False):
             elif epoch_samples == 0:
                 accumulated_data = np.concatenate(accumulated_data, axis=-1)
                 md = info.pop('metadata', {})
-                d = PipelineData(accumulated_data, info=info, metadata=md)
+                d = PipelineData(accumulated_data, fs=fs, metadata=md)
                 callback(d)
                 break
 
@@ -116,6 +168,45 @@ def capture_epoch(epoch_t0, epoch_samples, info, callback, auto_send=False):
 @coroutine
 def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
                    empty_queue_cb=None, removed_queue=None):
+    '''
+    Coroutine to facilitate extracting epochs from an incoming stream of data
+
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate of input stream. Used to convert parameters specified in
+        seconds to number of samples.
+    queue : deque
+        Instance of the collections.deque class containing information about
+        the epochs to extract. Must be a dictionary containing at least the
+        `t0` key (indicating the starting time, in seconds, of the epoch). The
+        `duration` key (indicating epoch duration, in seconds) is mandatory if
+        the `epoch_size` parameter is None. Optional keys include `key` (a
+        unique identifier for that epoch) and `metadata` (attributes that will
+        be attached to the epoch).
+    epoch_size : {None, float}
+        Size of epoch to extract, in seconds. If None, than the dictionaries
+        (provided via the queue) must contain a `duration` key.
+    poststim_time : float
+        Additional time to capture beyond the specified epoch size (or
+        `duration`).
+    buffer_size : float
+        Duration of samples to buffer in memory. If you anticipate needing to
+        "look back" and capture some epochs after the samples have already been
+        acquired, this value should be greater than 0.
+    target : callable
+        Callable that receives a list of epochs that were extracted. This is
+        typically another coroutine in the pipeline.
+    empty_queue_cb : {None, callable}
+        Callback function taking no arguments. Called when there are no more
+        epochs pending for capture and the queue is empty.
+    removed_queue : deque
+        Instance of the collections.deque class. Each entry in the queue must
+        contain at least the `t0` key and the `key` (if originally provided via
+        `queue`). If the epoch has not been fully captured yet, this epoch will
+        be removed from the list of epochs to capture.
+    '''
     # The variable `tlb` tracks the number of samples that have been acquired
     # and reflects the lower bound of `data`. For example, if we have acquired
     # 300,000 samples, then the next chunk of data received from (yield) will
@@ -159,7 +250,7 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
         while removed_queue:
             info = removed_queue.popleft()
 
-            # This is a uinique 
+            # This is a uinique
             key = info['t0'], info.get('key', None)
             if key not in epoch_coroutines:
                 n_remove += 1
@@ -202,7 +293,7 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
             total_epoch_size = info['epoch_size'] + poststim_time
             epoch_samples = round(total_epoch_size * fs)
             epoch_coroutine = capture_epoch(t0, epoch_samples, info,
-                                            epochs.append)
+                                            epochs.append, fs)
 
             try:
                 # Go through the data we've been caching to facilitate
@@ -242,3 +333,73 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
             # If queue and epoch coroutines are complete, call queue callback.
             empty_queue_cb()
             empty_queue_cb = None
+
+
+@coroutine
+def rms(fs, duration, target):
+    n = int(round(fs * duration))
+    data = [(yield)]
+    samples = sum(d.shape[-1] for d in data)
+
+    while True:
+        if samples >= n:
+            data = concat(data, axis=-1)
+            n_blocks = data.shape[-1] // n
+            n_samples = n_blocks * n
+
+            shape = list(data.shape[:-1]) + [n_blocks, n]
+            d = data[..., :n_samples]
+            d.shape = shape
+            result = np.mean(d ** 2, axis=-1) ** 0.5
+
+            target(result)
+            d = data[..., n_samples:]
+            samples = d.shape[-1]
+            data = [d]
+
+        data.append((yield))
+        samples += data[-1].shape[-1]
+
+
+@coroutine
+def iirfilter(fs, N, Wn, rp, rs, btype, ftype, target):
+    b, a = signal.iirfilter(N, Wn, rp, rs, btype, ftype=ftype, fs=fs)
+    if np.any(np.abs(np.roots(a)) > 1):
+        raise ValueError('Unstable filter coefficients')
+
+    # Initialize the state of the filter and scale it by y[0] to avoid a
+    # transient.
+    zi = signal.lfilter_zi(b, a)
+    y = (yield)
+    zo = zi * y[0]
+
+    while True:
+        y_filt, zo = signal.lfilter(b, a, y, zi=zo)
+        if isinstance(y, PipelineData):
+            y_filt = PipelineData(y_filt, y.fs, y.s0)
+        target(y_filt)
+        y = (yield)
+
+
+@coroutine
+def blocked(block_size, target):
+    data = []
+    n = 0
+
+    while True:
+        d = (yield)
+        if d is Ellipsis:
+            data = []
+            target(d)
+            continue
+
+        n += d.shape[-1]
+        data.append(d)
+        if n >= block_size:
+            merged = concat(data, axis=-1)
+            while merged.shape[-1] >= block_size:
+                block = merged[..., :block_size]
+                target(block)
+                merged = merged[..., block_size:]
+            data = [merged]
+            n = merged.shape[-1]
