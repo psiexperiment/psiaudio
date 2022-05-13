@@ -572,8 +572,13 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
 def detrend(mode, target):
     while True:
         data = (yield)
-        if mode is not None:
+        if isinstance(data, PipelineData) and data.ndim != 3:
+            raise ValueError('Cannot detrend')
+        if mode is None:
+            target(data)
+        else:
             data_detrend = signal.detrend(data, axis=-1, type=mode)
             if isinstance(data, PipelineData):
-                data_detrend = PipelineData(data_detrend, data.fs, data.s0)
-        target(data)
+                data_detrend = PipelineData(data_detrend, data.fs, data.s0,
+                                            data.channel, data.metadata)
+            target(data_detrend)

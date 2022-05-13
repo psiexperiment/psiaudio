@@ -290,16 +290,54 @@ def test_blocked(data):
     np.testing.assert_array_equal(actual, data)
 
 
-#@pytest.fixture(scope='module', params=[None, 'constant', 'linear'])
-#def detrend_mode(request):
-#    return request.param
-#
-#
-#def test_detrend(data, detrend_mode):
-#    expected = signal.detrend(data, axis=-1, type=detrend_mode)
-#    cb = partial(pipeline.detrend, detrend_mode)
-#    actual = feed_pipeline(cb, data)
-#    actual = pipeline.concat(actual)
-#    assert actual.s0 == 0
-#    assert actual.fs == data.fs
-#    np.testing.assert_array_equal(actual, expected)
+@pytest.fixture(scope='module', params=[None, 'constant', 'linear'])
+def detrend_mode(request):
+    return request.param
+
+
+def test_detrend(data, detrend_mode):
+    cb = partial(pipeline.detrend, detrend_mode)
+    with pytest.raises(ValueError):
+        actual = feed_pipeline(cb, data)
+
+    fs = data.fs
+    epoch_size = 0.1
+    epoch_samples = int(round(epoch_size * fs))
+
+    queue = deque()
+    expected = []
+    for i, name in enumerate('ABC'):
+        t0 = (i + 1) / 10
+        queue.append({'t0': t0, 'metadata': {'epoch': name}})
+        lb = int(round(t0 * fs))
+        ub = lb + epoch_samples
+        expected.append(data[np.newaxis, lb:ub])
+    expected = pipeline.concat(expected, axis=-3)
+    if detrend_mode is not None:
+        expected = signal.detrend(expected, axis=-1, type=detrend_mode)
+
+    def cb(target):
+        nonlocal detrend_mode
+        nonlocal queue
+        nonlocal fs
+        nonlocal epoch_size
+
+        return \
+            pipeline.extract_epochs(
+                data.fs,
+                queue,
+                epoch_size,
+                0,
+                0,
+                pipeline.detrend(
+                    detrend_mode,
+                    target
+                ).send
+            )
+
+    actual = pipeline.concat(feed_pipeline(cb, data), -3)
+    np.testing.assert_array_almost_equal(actual, expected)
+
+    assert actual.shape == (3, 1, epoch_samples)
+    assert actual.channel == [None]
+    assert actual.metadata == [{'epoch': 'A'}, {'epoch': 'B'}, {'epoch': 'C'}]
