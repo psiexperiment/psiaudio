@@ -36,12 +36,32 @@ def test_normalize_index():
         normalize_index(np.s_[..., ...], 4)
 
 
+def test_pipeline_data_construct():
+    d = np.random.uniform(size=10)
+    d = pipeline.PipelineData(d, fs=1e3)
+    assert d.s0 == 0
+    assert d.channel == None
+    assert d.metadata == {}
+
+    d = np.random.uniform(size=(2, 10))
+    d = pipeline.PipelineData(d, fs=1e3)
+    assert d.s0 == 0
+    assert d.channel == [None, None]
+    assert d.metadata == {}
+
+    d = np.random.uniform(size=(3, 2, 10))
+    d = pipeline.PipelineData(d, fs=1e3)
+    assert d.s0 == 0
+    assert d.channel == [None, None]
+    assert d.metadata == [{}, {}, {}]
+
+
 def test_pipeline_data_1d(data):
     fs = data.fs
     md = data.metadata.copy()
 
     assert data.channel is None
-    assert data.epochs is None
+    assert data.metadata == md
 
     assert data[::2].fs == fs / 2
     assert data[::3].fs == fs / 3

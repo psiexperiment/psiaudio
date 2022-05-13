@@ -64,7 +64,7 @@ class PipelineData(np.ndarray):
         obj.fs = fs
         obj.s0 = s0
 
-        if obj.ndim == 1:
+        if obj.ndim <= 2:
             if metadata is None:
                 metadata = {}
         if obj.ndim > 1:
