@@ -7,6 +7,9 @@ import numpy as np
 from scipy import signal
 
 
+################################################################################
+# PipelineData
+################################################################################
 def normalize_index(index, ndim):
     """Expands an index into the same dimensionality as the array
 
@@ -240,6 +243,9 @@ def concat(arrays, axis=-1):
     return PipelineData(result, fs=fs, s0=s0, channel=channel, metadata=metadata)
 
 
+################################################################################
+# Generic
+################################################################################
 def coroutine(func):
     '''Decorator to auto-start a coroutine.'''
     def start(*args, **kwargs):
@@ -247,6 +253,17 @@ def coroutine(func):
         next(cr)
         return cr
     return start
+
+
+@coroutine
+def broadcast(*targets):
+    '''
+    Send the data to multiple targets
+    '''
+    while True:
+        data = (yield)
+        for target in targets:
+            target(data)
 
 
 ################################################################################
