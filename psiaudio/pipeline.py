@@ -7,13 +7,76 @@ import numpy as np
 from scipy import signal
 
 
+def normalize_index(index, ndim):
+    """Expands an index into the same dimensionality as the array
+
+    Parameters
+    ----------
+    index : {Ellipsis, None, slice, tuple}
+        Index to normalize
+    ndim : int
+        The dimension of the object that is being indexed
+
+    Returns
+    -------
+    norm_index : tuple
+        The expanded index.
+    """
+    if index is np.newaxis:
+        return tuple([np.newaxis] + [slice(None) for i in range(ndim)])
+    if index is Ellipsis:
+        return tuple(slice(None) for i in range(ndim))
+    if isinstance(index, (slice, int)):
+        return tuple([index] + [slice(None) for i in range(ndim - 1)])
+    # If we've made it this far, we now have an indexing tuple.
+
+    n_ellipsis = sum(int(i is Ellipsis) for i in index)
+    if n_ellipsis > 1:
+        raise IndexError('More than one ... not supported')
+
+    # Update for the number of new dimensions we are adding
+    ndim += sum(int(i is np.newaxis) for i in index)
+
+    norm_index = []
+    for i in index:
+        if isinstance(i, (slice, int)):
+            norm_index.append(i)
+        elif i is np.newaxis:
+            norm_index.append(np.newaxis)
+        elif i is Ellipsis:
+            for _ in range(ndim - len(index) + 1):
+                norm_index.append(slice(None))
+
+    # Tack on remaining dimensions
+    for _ in range(ndim - len(norm_index)):
+        norm_index.append(slice(None))
+
+    return tuple(norm_index)
+
+
 class PipelineData(np.ndarray):
 
-    def __new__(cls, arr, fs, s0=0, metadata=None):
+    def __new__(cls, arr, fs, s0=0, channel=None, metadata=None):
         obj = np.asarray(arr).view(cls)
-        obj.metadata = metadata if metadata else {}
         obj.fs = fs
         obj.s0 = s0
+
+        if obj.ndim == 1:
+            if metadata is None:
+                metadata = {}
+        if obj.ndim > 1:
+            if channel is None:
+                channel = [None for i in range(obj.shape[-2])]
+            elif len(channel) != obj.shape[-2]:
+                raise ValueError(f'Length of channel must be {obj.shape[-2]}')
+        if  obj.ndim > 2:
+            if metadata is None:
+                metadata = [{} for i in range(obj.shape[-3])]
+            elif len(metadata) != obj.shape[-3]:
+                raise ValueError(f'Length of metadata must be {obj.shape[-3]}')
+
+        obj.channel = channel
+        obj.metadata = metadata
         return obj
 
     def __getitem__(self, s):
@@ -21,13 +84,42 @@ class PipelineData(np.ndarray):
         # This will be the case when s is just an integer, not a slice.
         if not hasattr(obj, 'metadata'):
             return obj
-        if isinstance(s, tuple):
-            s = s[-1]
-        if isinstance(s, slice):
-            if s.start is not None:
-                obj.s0 += s.start
-            if s.step is not None:
-                obj.fs /= s.step
+
+        # Now, figure out the operations on our dimensions
+        s = normalize_index(s, self.ndim)
+
+        # Since np.newaxis is None, we need a different placeholder to indicate
+        # that we have a no-op. We need to know whether a new axis was added so
+        # that we can properly adjust the channel or metadata on the array.
+        skip = object()
+        if len(s) == 1:
+            epoch_slice, channel_slice, (time_slice,) = skip, skip, s
+        elif len(s) == 2:
+            epoch_slice, (channel_slice, time_slice,) = skip, s
+        elif len(s) == 3:
+            epoch_slice, channel_slice, time_slice = s
+
+        if time_slice.start is not None:
+            obj.s0 += time_slice.start
+        if time_slice.step is not None:
+            obj.fs /= time_slice.step
+
+        if channel_slice is np.newaxis:
+            if not isinstance(obj.channel, list):
+                obj.channel = [obj.channel]
+            elif len(obj.channel) != 1:
+                raise ValueError('Too many channels')
+        elif channel_slice is not skip:
+            obj.channel = obj.channel[channel_slice]
+
+        if epoch_slice is np.newaxis:
+            if not isinstance(obj.metadata, list):
+                obj.metadata = [obj.metadata]
+            elif len(obj.metadata) != 1:
+                raise ValueError('Too many entries for metadata')
+        elif epoch_slice is not skip:
+            obj.metadata = obj.metadata[epoch_slice]
+
         return obj
 
     def __array_finalize__(self, obj):
@@ -36,9 +128,20 @@ class PipelineData(np.ndarray):
         self.s0 = getattr(obj, 's0', None)
         self.metadata = getattr(obj, 'metadata', {}).copy()
 
-    #def __array_ufunc__(self, ufunc, method, *args, **kwargs):
-    #    results = super().__array_ufunc__(ufunc, method, *args, **kwargs)
-    #    return results
+        if getattr(obj, 'channel', None) is not None:
+            self.channel = getattr(obj, 'channel').copy()
+        elif self.ndim > 1:
+            self.channel = [None for i in range(self.shape[-2])]
+        else:
+            self.channel = None
+
+        if getattr(obj, 'epochs', None) is not None:
+            self.epochs = getattr(obj, 'epochs').copy()
+        elif self.ndim > 2:
+            self.epochs = [{} for e in range(self.shape[-3])]
+        else:
+            self.epochs = None
+
 
     def mean(self, axis=None, *args, **kwargs):
         if axis != -1:
@@ -50,39 +153,91 @@ class PipelineData(np.ndarray):
         return result
 
     def __repr__(self):
-        result = super().__repr__()
-        result = f'{result}\n > s0: {self.s0}, fs: {self.fs}, shape: {self.shape}'
+        result = f'Pipeline > s0: {self.s0}, fs: {self.fs}, shape: {self.shape}'
         return result
 
     def __str__(self):
-        result = super().__str__()
-        result = f'{result}\n > s0: {self.s0}, fs: {self.fs}, shape: {self.shape}'
+        result = f'Pipeline > s0: {self.s0}, fs: {self.fs}, shape: {self.shape}'
         return result
 
 
-def concat(arrays, axis=-1):
-    if axis != -1:
-        raise NotImplementedError('Cannot concat along other axes yet')
+def ensure_dim(arrays, dim):
+    ndim = arrays[0].ndim
+    if dim == 'channel' and ndim == 1:
+        s = np.s_[np.newaxis, :]
+    elif dim == 'epoch' and ndim == 1:
+        s = np.s_[np.newaxis, np.newaxis, :]
+    elif dim == 'epoch' and ndim == 2:
+        s = np.s_[np.newaxis, :, :]
+    else:
+        s = np.s_[:]
+    return [a[s] for a in arrays]
 
+
+def concat(arrays, axis=-1):
     is_pipeline_data = [isinstance(a, PipelineData) for a in arrays]
     if not any(is_pipeline_data):
         return np.concatenate(arrays, axis=axis)
     if not all(is_pipeline_data):
         raise ValueError('Cannot concatenate pipeline and non-pipeline data')
 
-    base_fs = arrays[0].fs
-    base_s0 = arrays[0].s0
+    if axis == -1:
+        dim = 'time'
+    elif axis == -2:
+        dim = 'channel'
+    elif axis == -3:
+        dim = 'epoch'
+    else:
+        raise ValueError('Axis not supported')
 
-    current_s0 = base_s0 + arrays[0].shape[-1]
+    arrays = ensure_dim(arrays, dim)
+
+    # Do consistency checks to ensure we can properly concatenate
+    base_arr = arrays[0]
     for a in arrays[1:]:
-        if a.fs != base_fs:
+        if a.ndim != base_arr.ndim:
+            raise ValueError('Cannot concatenate inputs with different ndim')
+
+    # First, make sure sampling rates match. We simply cannot deal with
+    # variable sampling rates no matter what concat dimension we have.
+    fs = base_arr.fs
+    for a in arrays[1:]:
+        if a.fs != base_arr.fs:
             raise ValueError('Cannot concatenate inputs with different sampling rates')
-        if a.s0 != current_s0:
-            raise ValueError(f'First sample of each array is not aligned (expected {current_s0}, found {a.s0})')
-        current_s0 += a.shape[-1]
+
+    # If we are concatenating across time, we need to make sure that we have
+    # contiguous chunks of data.
+    s0 = base_arr.s0
+    if dim == 'time':
+        current_s0 = s0 + arrays[0].shape[-1]
+        for a in arrays[1:]:
+            if a.s0 != current_s0:
+                raise ValueError(f'first sample of each array is not aligned (expected {current_s0}, found {a.s0})')
+            current_s0 += a.shape[-1]
+
+    if dim != 'channel':
+        channel = base_arr.channel
+        for a in arrays[1:]:
+            if a.channel != channel:
+                raise ValueError('Cannot concatenate inputs with different channel')
+    else:
+        channel = [c for array in arrays for c in array.channel]
+
+    if dim != 'epoch':
+        metadata = base_arr.metadata
+        for a in arrays[1:]:
+            if a.metadata != metadata:
+                raise ValueError('Cannot concatenate inputs with different metadata')
+    else:
+        metadata = []
+        for a in arrays:
+            if a.ndim >= 3:
+                metadata.extend(a.metadata)
+            else:
+                metadata.append(a.metadata)
 
     result = np.concatenate(arrays, axis=axis)
-    return PipelineData(result, base_fs, base_s0)
+    return PipelineData(result, fs=fs, s0=s0, channel=channel, metadata=metadata)
 
 
 def coroutine(func):
@@ -94,8 +249,81 @@ def coroutine(func):
     return start
 
 
+################################################################################
+# Continuous data pipeline
+################################################################################
 @coroutine
-def capture_epoch(epoch_t0, epoch_samples, info, callback, fs=None,
+def rms(fs, duration, target):
+    n = int(round(fs * duration))
+    data = [(yield)]
+    samples = sum(d.shape[-1] for d in data)
+
+    while True:
+        if samples >= n:
+            data = concat(data, axis=-1)
+            n_blocks = data.shape[-1] // n
+            n_samples = n_blocks * n
+
+            shape = list(data.shape[:-1]) + [n_blocks, n]
+            d = data[..., :n_samples]
+            d.shape = shape
+            result = np.mean(d ** 2, axis=-1) ** 0.5
+
+            target(result)
+            d = data[..., n_samples:]
+            samples = d.shape[-1]
+            data = [d]
+
+        data.append((yield))
+        samples += data[-1].shape[-1]
+
+
+@coroutine
+def iirfilter(fs, N, Wn, rp, rs, btype, ftype, target):
+    b, a = signal.iirfilter(N, Wn, rp, rs, btype, ftype=ftype, fs=fs)
+    if np.any(np.abs(np.roots(a)) > 1):
+        raise ValueError('Unstable filter coefficients')
+
+    # Initialize the state of the filter and scale it by y[0] to avoid a
+    # transient.
+    zi = signal.lfilter_zi(b, a)
+    y = (yield)
+    zo = zi * y[0]
+
+    while True:
+        y_filt, zo = signal.lfilter(b, a, y, zi=zo)
+        if isinstance(y, PipelineData):
+            y_filt = PipelineData(y_filt, y.fs, y.s0)
+        target(y_filt)
+        y = (yield)
+
+
+@coroutine
+def blocked(block_size, target):
+    data = []
+    n = 0
+
+    while True:
+        d = (yield)
+        if d is Ellipsis:
+            data = []
+            target(d)
+            continue
+
+        n += d.shape[-1]
+        data.append(d)
+        if n >= block_size:
+            merged = concat(data, axis=-1)
+            while merged.shape[-1] >= block_size:
+                block = merged[..., :block_size]
+                target(block)
+                merged = merged[..., block_size:]
+            data = [merged]
+            n = merged.shape[-1]
+
+
+@coroutine
+def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
                   auto_send=False):
     '''
     Coroutine to facilitate capture of a single epoch
@@ -106,8 +334,8 @@ def capture_epoch(epoch_t0, epoch_samples, info, callback, fs=None,
 
     Parameters
     ----------
-    epoch_t0 : float
-        Starting time of epoch.
+    epoch_s0 : float
+        Starting sample of epoch.
     epoch_samples : int
         Number of samples to capture.
     info : dict
@@ -124,19 +352,21 @@ def capture_epoch(epoch_t0, epoch_samples, info, callback, fs=None,
     # It then provides the samples to the callback function and exits the while
     # loop.
     accumulated_data = []
+    current_s0 = epoch_s0
+    md = info.pop('metadata', {})
 
     while True:
-        tlb, data = (yield)
+        slb, data = (yield)
         samples = data.shape[-1]
 
-        if epoch_t0 < tlb:
+        if current_s0 < slb:
             # We have missed the start of the epoch. Notify the callback of this
             m = 'Missed samples for epoch of %d samples starting at %d'
-            log.warning(m, epoch_samples, epoch_t0)
-            callback({'signal': None, 'info': info})
+            log.warning(m, epoch_samples, epoch_s0)
+            callback(PipelineData([], fs=fs, s0=epoch_s0, metadata=md))
             break
 
-        elif epoch_t0 <= (tlb + samples):
+        elif current_s0 <= (slb + samples):
             # The start of the epoch is somewhere inside `data`. Find the start
             # `i` and determine how many samples `d` to extract from `data`.
             # It's possible that data does not contain the entire epoch. In
@@ -144,23 +374,23 @@ def capture_epoch(epoch_t0, epoch_samples, info, callback, fs=None,
             # `accumulated_data`. We then update start to point to the last
             # acquired sample `i+d` and update duration to be the number of
             # samples we still need to capture.
-            i = int(round(epoch_t0 - tlb))
+            i = int(round(current_s0 - slb))
             d = int(round(min(epoch_samples, samples - i)))
             accumulated_data.append(data[..., i:i + d])
-            epoch_t0 += d
+            current_s0 += d
             epoch_samples -= d
 
             if auto_send:
-                accumulated_data = np.concatenate(accumulated_data, axis=-1)
+                # TODO: Not tested
+                accumulated_data = concat(accumulated_data, axis=-1)
                 callback(accumulated_data)
                 accumulated_data = []
                 if epoch_samples == 0:
                     break
 
             elif epoch_samples == 0:
-                accumulated_data = np.concatenate(accumulated_data, axis=-1)
-                md = info.pop('metadata', {})
-                d = PipelineData(accumulated_data, fs=fs, metadata=md)
+                accumulated_data = concat(accumulated_data, axis=-1)
+                d = PipelineData(accumulated_data, fs=fs, s0=epoch_s0, metadata=md)
                 callback(d)
                 break
 
@@ -316,7 +546,7 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
         # Once the new segment of data has been processed, pass all complete
         # epochs along to the next target.
         if len(epochs) != 0:
-            target(epochs[:])
+            target(concat(epochs[:], axis=-3))
             epochs[:] = []
 
         # Check to see if any of the cached samples are older than the
@@ -335,71 +565,15 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
             empty_queue_cb = None
 
 
+################################################################################
+# Epoch pipelines
+################################################################################
 @coroutine
-def rms(fs, duration, target):
-    n = int(round(fs * duration))
-    data = [(yield)]
-    samples = sum(d.shape[-1] for d in data)
-
+def detrend(mode, target):
     while True:
-        if samples >= n:
-            data = concat(data, axis=-1)
-            n_blocks = data.shape[-1] // n
-            n_samples = n_blocks * n
-
-            shape = list(data.shape[:-1]) + [n_blocks, n]
-            d = data[..., :n_samples]
-            d.shape = shape
-            result = np.mean(d ** 2, axis=-1) ** 0.5
-
-            target(result)
-            d = data[..., n_samples:]
-            samples = d.shape[-1]
-            data = [d]
-
-        data.append((yield))
-        samples += data[-1].shape[-1]
-
-
-@coroutine
-def iirfilter(fs, N, Wn, rp, rs, btype, ftype, target):
-    b, a = signal.iirfilter(N, Wn, rp, rs, btype, ftype=ftype, fs=fs)
-    if np.any(np.abs(np.roots(a)) > 1):
-        raise ValueError('Unstable filter coefficients')
-
-    # Initialize the state of the filter and scale it by y[0] to avoid a
-    # transient.
-    zi = signal.lfilter_zi(b, a)
-    y = (yield)
-    zo = zi * y[0]
-
-    while True:
-        y_filt, zo = signal.lfilter(b, a, y, zi=zo)
-        if isinstance(y, PipelineData):
-            y_filt = PipelineData(y_filt, y.fs, y.s0)
-        target(y_filt)
-        y = (yield)
-
-
-@coroutine
-def blocked(block_size, target):
-    data = []
-    n = 0
-
-    while True:
-        d = (yield)
-        if d is Ellipsis:
-            data = []
-            target(d)
-            continue
-
-        n += d.shape[-1]
-        data.append(d)
-        if n >= block_size:
-            merged = concat(data, axis=-1)
-            while merged.shape[-1] >= block_size:
-                block = merged[..., :block_size]
-                target(block)
-                merged = merged[..., block_size:]
-            data = [merged]
-            n = merged.shape[-1]
+        data = (yield)
+        if mode is not None:
+            data_detrend = signal.detrend(data, axis=-1, type=mode)
+            if isinstance(data, PipelineData):
+                data_detrend = PipelineData(data_detrend, data.fs, data.s0)
+        target(data)
