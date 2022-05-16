@@ -97,6 +97,8 @@ def test_pipeline_data_2d(data):
     data = data[np.newaxis]
     fs = data.fs
     md = data.metadata.copy()
+    # TODO: add data2d[..., 0] once we add support for dimensionality
+    # reduction.
 
     assert data.channel == [None]
     assert data.epochs is None

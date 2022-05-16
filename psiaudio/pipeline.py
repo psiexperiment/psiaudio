@@ -102,10 +102,17 @@ class PipelineData(np.ndarray):
         elif len(s) == 3:
             epoch_slice, channel_slice, time_slice = s
 
-        if time_slice.start is not None:
-            obj.s0 += time_slice.start
-        if time_slice.step is not None:
-            obj.fs /= time_slice.step
+        if isinstance(time_slice, int):
+            # Before we implement this, we need to have some way of tracking
+            # dimensionality (e.g., if ndim=1, what dimension has been
+            # preserved, time, channel, etc.? 
+            raise NotImplementedError
+            obj.s0 += time_slice
+        else:
+            if time_slice.start is not None:
+                obj.s0 += time_slice.start
+            if time_slice.step is not None:
+                obj.fs /= time_slice.step
 
         if channel_slice is np.newaxis:
             if not isinstance(obj.channel, list):
