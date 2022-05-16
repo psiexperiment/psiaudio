@@ -11,10 +11,18 @@ from psiaudio.pipeline import normalize_index
 
 
 @pytest.fixture
-def data(fs):
+def data1d(fs):
     md = {'foo': 'bar'}
     data = np.random.uniform(size=100000)
     return pipeline.PipelineData(data, fs, metadata=md)
+
+
+@pytest.fixture
+def data2d(fs):
+    md = {'foo': 'bar'}
+    channel = ['channel1', 'channel2']
+    data = np.random.uniform(size=(2, 100000))
+    return pipeline.PipelineData(data, fs, channel=channel, metadata=md)
 
 
 def test_normalize_index():
@@ -56,49 +64,56 @@ def test_pipeline_data_construct():
     assert d.metadata == [{}, {}, {}]
 
 
-def test_pipeline_data_1d(data):
-    fs = data.fs
-    md = data.metadata.copy()
+def test_pipeline_data_1d(data1d):
+    fs = data1d.fs
+    md = data1d.metadata.copy()
 
-    assert data.channel is None
-    assert data.metadata == md
+    assert data1d.channel is None
+    assert data1d.metadata == md
 
-    assert data[::2].fs == fs / 2
-    assert data[::3].fs == fs / 3
-    assert data[::2][::3].fs == fs / 2 / 3
+    assert data1d[::2].fs == fs / 2
+    assert data1d[::3].fs == fs / 3
+    assert data1d[::2][::3].fs == fs / 2 / 3
 
-    assert data[5:].s0 == 5
-    assert data[10:].s0 == 10
-    assert data[10:][10:].s0 == (10 + 10)
+    assert data1d[5:].s0 == 5
+    assert data1d[10:].s0 == 10
+    assert data1d[10:][10:].s0 == (10 + 10)
 
-    d = data[5::2][10::2]
+    d = data1d[5::2][10::2]
     assert d.s0 == (5 + 10)
     assert d.fs == fs / 2 / 2
 
-    assert data[:1].fs == fs
-    assert data[1:1].fs == fs
-    assert data[:1:1].fs == fs
-    assert data[1:1:1].fs == fs
-    assert data[:1].s0 == 0
-    assert data[1:1].s0 == 1
-    assert data[:1:1].s0 == 0
-    assert data[1:1:1].s0 == 1
-    assert data[:1].metadata == md
-    assert data[1:1].metadata == md
-    assert data[:1:1].metadata == md
-    assert data[1:1:1].metadata == md
+    assert data1d[:1].fs == fs
+    assert data1d[1:1].fs == fs
+    assert data1d[:1:1].fs == fs
+    assert data1d[1:1:1].fs == fs
+    assert data1d[:1].s0 == 0
+    assert data1d[1:1].s0 == 1
+    assert data1d[:1:1].s0 == 0
+    assert data1d[1:1:1].s0 == 1
+    assert data1d[:1].metadata == md
+    assert data1d[1:1].metadata == md
+    assert data1d[:1:1].metadata == md
+    assert data1d[1:1:1].metadata == md
 
-    n = len(data)
-    assert data[n:].s0 == n
+    n = len(data1d)
+    assert data1d[n:].s0 == n
 
 
-def test_pipeline_data_2d(data):
-    # Upcast to 2D
-    data = data[np.newaxis]
-    fs = data.fs
-    md = data.metadata.copy()
+def test_pipeline_data_2d(data1d, data2d):
     # TODO: add data2d[..., 0] once we add support for dimensionality
     # reduction.
+
+    s = data2d[..., :1]
+    assert s.s0 == 0
+    assert s.channel == ['channel1', 'channel2']
+    assert data2d[0].channel == 'channel1'
+    assert data2d[1].channel == 'channel2'
+
+    # Upcast to 1D to 2D
+    fs = data1d.fs
+    md = data1d.metadata.copy()
+    data = data1d[np.newaxis]
 
     assert data.channel == [None]
     assert data.epochs is None
@@ -165,11 +180,11 @@ def test_pipeline_data_2d(data):
     assert data[0, 1:1:1].channel == None
 
 
-def test_pipeline_data_3d(data):
+def test_pipeline_data_3d(data1d):
     # Upcast to 2D
-    md = data.metadata.copy()
-    data = data[np.newaxis, np.newaxis]
-    fs = data.fs
+    md = data1d.metadata.copy()
+    fs = data1d.fs
+    data = data1d[np.newaxis, np.newaxis]
     assert data.channel == [None]
     assert data.metadata == [md]
     assert data[0].metadata == md
@@ -226,30 +241,43 @@ def feed_pipeline(cb, data, include_offset=False):
         try:
             i = np.random.randint(low=10, high=100)
             if include_offset:
-                cr.send((o, data[o:o+i]))
+                cr.send((o, data[..., o:o+i]))
             else:
-                cr.send(data[o:o+i])
+                cr.send(data[..., o:o+i])
             o += i
         except StopIteration:
             break
     return result
 
 
-def test_capture_epoch(data):
+@pytest.mark.parametrize('data,', ['data1d', 'data2d'])
+def test_capture_epoch(fs, data, request):
+    data = request.getfixturevalue(data)
     s0 = 12345
     samples = 54321
 
-    expected = data[s0:s0+samples]
+    expected = data[..., s0:s0+samples]
     cb = partial(pipeline.capture_epoch, s0, samples, {})
     result = feed_pipeline(cb, data, True)
     assert len(result) == 1
+
     np.testing.assert_array_equal(result[0], expected)
-    assert result[0].metadata == {}
+    assert result[0].metadata == expected.metadata
     assert result[0].s0 == s0
-    assert result[0].channel == None
+    assert result[0].channel == expected.channel
 
 
-def test_extract_epochs(data):
+
+@pytest.mark.parametrize('data_fixture,', ['data1d', 'data2d'])
+def test_extract_epochs(fs, data_fixture, request):
+    if data_fixture == 'data1d':
+        n_channels = 1
+        expected_channels = [None]
+    elif data_fixture == 'data2d':
+        n_channels = 2
+        expected_channels = ['channel1', 'channel2']
+    data = request.getfixturevalue(data_fixture)
+
     queue = deque()
     epoch_size = 0.1
     epoch_samples = int(round(epoch_size * data.fs))
@@ -258,41 +286,50 @@ def test_extract_epochs(data):
     queue.append({'t0': 0.2, 'metadata': {'epoch': 'B'}})
     queue.append({'t0': 0.3, 'metadata': {'epoch': 'C'}})
     result = pipeline.concat(feed_pipeline(cb, data), -3)
-    assert result.shape == (3, 1, epoch_samples)
-    #assert result.s0 == 0
-    assert result.channel == [None]
-    assert result.metadata == [{'epoch': 'A'}, {'epoch': 'B'}, {'epoch': 'C'}]
+    assert result.shape == (3, n_channels, epoch_samples)
+    assert result.channel == expected_channels
+    expected_md = [{**data.metadata, **{'epoch': e}} for e in 'ABC']
+    assert result.metadata == expected_md
 
 
-def test_rms(fs):
+@pytest.mark.parametrize('data,', ['data1d', 'data2d'])
+def test_rms(fs, data, request):
+    data = request.getfixturevalue(data)
+
     duration = 0.1
-    chunk_samples = int(round(fs * duration))
-    n_samples = chunk_samples * 10
-    signal = np.arange(n_samples)
+    n_samples = int(round(data.fs * duration))
+    n_chunks = data.shape[-1] // n_samples
 
-    signal = pipeline.PipelineData(signal, fs=fs, metadata={'test': True})
-    x = signal.reshape((-1, chunk_samples))
-    expected = np.mean(x ** 2, axis=-1) ** 0.5
+    n = n_samples * n_chunks
+    expected = data[..., :n]
+    expected.shape = list(expected.shape[:-1]) + [n_chunks, n_samples]
+    expected_rms = np.mean(expected ** 2, axis=-1) ** 0.5
 
-    cb = partial(pipeline.rms, fs, duration)
-    result = feed_pipeline(cb, signal)
+    cb = partial(pipeline.rms, data.fs, duration)
+    result = feed_pipeline(cb, data)
     for r in result:
-        assert r.fs == (fs / chunk_samples)
+        assert r.fs == (fs / n_samples)
 
-    actual = pipeline.concat(result, axis=-1)
-    np.testing.assert_array_equal(actual, expected)
-    assert actual.fs == (fs / chunk_samples)
-    assert actual.s0 == 0
+    actual_rms = pipeline.concat(result, axis=-1)
+    np.testing.assert_array_equal(actual_rms, expected_rms)
+    assert actual_rms.fs == (fs / n_samples)
+    assert actual_rms.s0 == 0
 
 
-def test_iirfilter(data, stim_fl, stim_fh):
+@pytest.mark.parametrize('data,', ['data1d', 'data2d'])
+def test_iirfilter(fs, data, stim_fl, stim_fh, request):
+    # Note, do not remove `fs` from the list of arguments. This seems to be
+    # necessary to allow pytest to run. Not sure why, but
+    # request.getfixturevalue(data) will fail if we do not pull in the fs
+    # fixture here.
+    data = request.getfixturevalue(data)
     cb = partial(pipeline.iirfilter, data.fs, 1, (stim_fl, stim_fh), None,
                  None, 'band', 'butter')
 
     b, a = signal.iirfilter(1, (stim_fl, stim_fh), None, None, 'band',
                             ftype='butter', fs=data.fs)
     zi = signal.lfilter_zi(b, a)
-    expected, _ = signal.lfilter(b, a, data, zi=zi * data[0])
+    expected, _ = signal.lfilter(b, a, data, zi=zi * data[..., :1], axis=-1)
     actual = feed_pipeline(cb, data)
     actual = pipeline.concat(actual)
     assert actual.s0 == 0
@@ -300,12 +337,14 @@ def test_iirfilter(data, stim_fl, stim_fh):
     np.testing.assert_array_equal(actual, expected)
 
 
-def test_blocked(data):
+@pytest.mark.parametrize('data,', ['data1d', 'data2d'])
+def test_blocked(fs, data, request):
+    data = request.getfixturevalue(data)
     cb = partial(pipeline.blocked, 100)
     actual = feed_pipeline(cb, data)
     for i, a in enumerate(actual):
         assert a.s0 == (i * 100)
-        assert a.shape == (100,)
+        assert a.shape[-1] == 100
     actual = pipeline.concat(actual)
     assert actual.fs == data.fs
     assert actual.s0 == 0
@@ -317,7 +356,15 @@ def detrend_mode(request):
     return request.param
 
 
-def test_detrend(data, detrend_mode):
+@pytest.mark.parametrize('data_fixture', ['data1d', 'data2d'])
+def test_detrend(fs, data_fixture, detrend_mode, request):
+    if data_fixture == 'data1d':
+        n_channels = 1
+        expected_channels = [None]
+    elif data_fixture == 'data2d':
+        n_channels = 2
+        expected_channels = ['channel1', 'channel2']
+    data = request.getfixturevalue(data_fixture)
     cb = partial(pipeline.detrend, detrend_mode)
     with pytest.raises(ValueError):
         actual = feed_pipeline(cb, data)
@@ -333,8 +380,9 @@ def test_detrend(data, detrend_mode):
         queue.append({'t0': t0, 'metadata': {'epoch': name}})
         lb = int(round(t0 * fs))
         ub = lb + epoch_samples
-        expected.append(data[np.newaxis, lb:ub])
+        expected.append(data[..., lb:ub])
     expected = pipeline.concat(expected, axis=-3)
+
     if detrend_mode is not None:
         expected = signal.detrend(expected, axis=-1, type=detrend_mode)
 
@@ -358,8 +406,10 @@ def test_detrend(data, detrend_mode):
             )
 
     actual = pipeline.concat(feed_pipeline(cb, data), -3)
+    print(actual.shape)
     np.testing.assert_array_almost_equal(actual, expected)
 
-    assert actual.shape == (3, 1, epoch_samples)
-    assert actual.channel == [None]
-    assert actual.metadata == [{'epoch': 'A'}, {'epoch': 'B'}, {'epoch': 'C'}]
+    assert actual.shape == (3, n_channels, epoch_samples)
+    assert actual.channel == expected_channels
+    expected_md = [{**data.metadata, **{'epoch': e}} for e in 'ABC']
+    assert actual.metadata == expected_md

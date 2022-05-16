@@ -312,10 +312,10 @@ def iirfilter(fs, N, Wn, rp, rs, btype, ftype, target):
     # transient.
     zi = signal.lfilter_zi(b, a)
     y = (yield)
-    zo = zi * y[0]
+    zo = zi * y[..., :1]
 
     while True:
-        y_filt, zo = signal.lfilter(b, a, y, zi=zo)
+        y_filt, zo = signal.lfilter(b, a, y, zi=zo, axis=-1)
         if isinstance(y, PipelineData):
             y_filt = PipelineData(y_filt, y.fs, y.s0)
         target(y_filt)
@@ -377,6 +377,7 @@ def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
     # loop.
     accumulated_data = []
     current_s0 = epoch_s0
+    print(info)
     md = info.pop('metadata', {})
 
     while True:
@@ -400,7 +401,9 @@ def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
             # samples we still need to capture.
             i = int(round(current_s0 - slb))
             d = int(round(min(epoch_samples, samples - i)))
-            accumulated_data.append(data[..., i:i + d])
+            c = data[..., i:i + d]
+            c.metadata.update(md)
+            accumulated_data.append(c)
             current_s0 += d
             epoch_samples -= d
 
@@ -413,9 +416,8 @@ def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
                     break
 
             elif epoch_samples == 0:
-                accumulated_data = concat(accumulated_data, axis=-1)
-                d = PipelineData(accumulated_data, fs=fs, s0=epoch_s0, metadata=md)
-                callback(d)
+                data = concat(accumulated_data, axis=-1)
+                callback(data)
                 break
 
 
