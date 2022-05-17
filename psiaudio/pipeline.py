@@ -2,6 +2,7 @@ import logging
 log = logging.getLogger(__name__)
 
 from collections import deque
+from copy import copy
 
 import numpy as np
 from scipy import signal
@@ -136,31 +137,29 @@ class PipelineData(np.ndarray):
         if obj is None: return
         self.fs = getattr(obj, 'fs', None)
         self.s0 = getattr(obj, 's0', None)
-        self.metadata = getattr(obj, 'metadata', {}).copy()
-
-        if getattr(obj, 'channel', None) is not None:
-            self.channel = getattr(obj, 'channel').copy()
-        elif self.ndim > 1:
+        self.metadata = copy(getattr(obj, 'metadata', {}))
+        self.channel = copy(getattr(obj, 'channel', None))
+        if self.channel is None and self.ndim > 1:
             self.channel = [None for i in range(self.shape[-2])]
-        else:
-            self.channel = None
-
-        if getattr(obj, 'epochs', None) is not None:
-            self.epochs = getattr(obj, 'epochs').copy()
-        elif self.ndim > 2:
-            self.epochs = [{} for e in range(self.shape[-3])]
-        else:
-            self.epochs = None
-
+        # TODO: Something about metadata?
 
     def mean(self, axis=None, *args, **kwargs):
-        if axis != -1:
-            raise NotImplementedError('Cannot average along other axes yet')
-        n = self.shape[-1]
-        result = super().mean(axis, *args, **kwargs)
-        result.fs /= n
-        result.s0 /= n
-        return result
+        dim, axis = dim_axis(axis)
+        if axis == -1:
+            n = self.shape[-1]
+            result = super().mean(axis, *args, **kwargs)
+            result.fs /= n
+            result.s0 /= n
+            return result
+        elif axis == -2:
+            result = super().mean(axis, *args, **kwargs)
+            result.channel = 'average'
+            return result
+        elif axis == -3:
+            result = super().mean(axis, *args, **kwargs)
+            result.metadata = None
+            return result
+
 
     def __repr__(self):
         result = f'Pipeline > s0: {self.s0}, fs: {self.fs}, shape: {self.shape}'
@@ -184,21 +183,32 @@ def ensure_dim(arrays, dim):
     return [a[s] for a in arrays]
 
 
-def concat(arrays, axis=-1):
-    is_pipeline_data = [isinstance(a, PipelineData) for a in arrays]
-    if not any(is_pipeline_data):
-        return np.concatenate(arrays, axis=axis)
-    if not all(is_pipeline_data):
-        raise ValueError('Cannot concatenate pipeline and non-pipeline data')
-
-    if axis == -1:
+def dim_axis(axis):
+    if axis == 'time':
+        axis, dim = -1, 'time'
+    if axis == 'channel':
+        axis, dim = -2, 'channel'
+    if axis == 'epoch':
+        axis, dim = -3, 'epoch'
+    elif axis == -1:
         dim = 'time'
     elif axis == -2:
         dim = 'channel'
     elif axis == -3:
         dim = 'epoch'
     else:
-        raise ValueError('Axis not supported')
+        raise ValueError(f'Axis not supported. Got {axis}')
+    return dim, axis
+
+
+def concat(arrays, axis=-1):
+    dim, axis = dim_axis(axis)
+
+    is_pipeline_data = [isinstance(a, PipelineData) for a in arrays]
+    if not any(is_pipeline_data):
+        return np.concatenate(arrays, axis=axis)
+    if not all(is_pipeline_data):
+        raise ValueError('Cannot concatenate pipeline and non-pipeline data')
 
     arrays = ensure_dim(arrays, dim)
 
@@ -387,7 +397,6 @@ def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
     # loop.
     accumulated_data = []
     current_s0 = epoch_s0
-    print(info)
     md = info.pop('metadata', {})
 
     while True:
@@ -412,7 +421,13 @@ def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
             i = int(round(current_s0 - slb))
             d = int(round(min(epoch_samples, samples - i)))
             c = data[..., i:i + d]
+
+            # TODO: Not in love with this approach. I don't like the idea of
+            # squashing md and info into existing metadata, but I don't want to
+            # add additional attributes to PipelineData.
             c.metadata.update(md)
+            c.metadata.update(info)
+
             accumulated_data.append(c)
             current_s0 += d
             epoch_samples -= d
