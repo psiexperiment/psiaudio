@@ -87,7 +87,10 @@ class BaseCalibration:
 
     def get_mean_sf(self, flb, fub, level, attenuation=0):
         frequencies = np.arange(flb, fub)
-        return self.get_sf(frequencies, level).mean(axis=0)
+        sf = self.get_sf(frequencies, level).mean(axis=0)
+        if np.isnan(sf):
+            raise ValueError('Requested range has some uncalibrated frequencies')
+        return sf
 
     def get_attenuation(self, frequency, voltage, level):
         return self.get_db(frequency, voltage)-level
