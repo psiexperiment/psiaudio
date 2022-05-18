@@ -404,7 +404,7 @@ class BroadbandNoiseFactory(Carrier):
         self.polarity = polarity
 
         if equalize:
-            raise ValueError('Not implemented')
+            raise ValueError('Equalization of broadband noise not implemented')
 
         if calibration is None:
             self.sf = level
@@ -421,6 +421,7 @@ class BroadbandNoiseFactory(Carrier):
         # number of samples the noise is segmented into.
         self.low = -np.sqrt(3) * self.sf
         self.high = np.sqrt(3) * self.sf
+
         self.reset()
 
     def reset(self):
