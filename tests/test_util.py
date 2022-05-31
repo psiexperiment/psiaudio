@@ -211,3 +211,29 @@ def test_process_tone():
 
     with pytest.raises(CalibrationTHDError):
         result = util.process_tone(fs, signal, f1, max_thd=1)
+
+
+def test_diff_matrix():
+    matrix = util.diff_matrix(8, 'all')
+    assert np.all(np.diag(matrix) == (1 - 1/8))
+    assert np.all(matrix.sum(axis=1) == 0)
+
+    matrix = util.diff_matrix(8, 'raw')
+    assert np.all(np.diag(matrix) == 1)
+    assert np.all(matrix.sum(axis=1) == 1)
+
+    matrix = util.diff_matrix(8, [0, 1])
+    assert np.all(np.abs(matrix[:, :1]) == 0.5)
+    assert np.all(matrix.sum(axis=1) == 0)
+
+    matrix = util.diff_matrix(8, 0)
+    assert np.all(np.abs(matrix[:, :0]) == 1)
+    assert np.all(matrix.sum(axis=1) == 0)
+
+    matrix = util.diff_matrix(8, ['A', 'B'], labels='ABCDEFGH')
+    assert np.all(np.abs(matrix[:, :1]) == 0.5)
+    assert np.all(matrix.sum(axis=1) == 0)
+
+    matrix = util.diff_matrix(8, 'A', labels='ABCDEFGH')
+    assert np.all(np.abs(matrix[:, :0]) == 1)
+    assert np.all(matrix.sum(axis=1) == 0)
