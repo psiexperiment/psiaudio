@@ -661,6 +661,9 @@ def check_interleaved_octaves(freqs, min_octaves=1):
     return not np.any(octaves < (min_octaves * 0.95))
 
 
+################################################################################
+# Misc. signal manipulation functions
+################################################################################
 def resample_fft(waveform, fs, target_fs):
     n = len(waveform)
     target_n = int(round(n * (target_fs / fs)))
@@ -705,3 +708,35 @@ def psd_bootstrap(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None):
         },
         index=pd.Index(psd_freq(x, fs), name='frequency'),
     )
+
+
+################################################################################
+# Multichannel functions
+################################################################################
+def diff_matrix(n_chan, reference, labels=None):
+    if reference == 'all':
+        matrix = np.full((n_chan, n_chan), -1/n_chan)
+        di = np.diag_indices(n_chan)
+        matrix[di] = 1 - 1/n_chan
+    elif reference == 'raw':
+        matrix = np.eye(n_chan, n_chan)
+    else:
+        if np.isscalar(reference):
+            reference = [reference]
+
+        if labels is not None:
+            i_reference = [labels.index(r) for r in reference]
+        else:
+            i_reference = reference
+
+        matrix = np.eye(n_chan, n_chan)
+
+        for i in i_reference:
+            col = matrix[:, i].copy()
+            scale = 1 / len(i_reference)
+            col[:i] = -scale
+            col[i] -= scale
+            col[i+1:] = -scale
+            matrix[:, i] = col
+
+    return matrix

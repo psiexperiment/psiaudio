@@ -8,6 +8,7 @@ from scipy import signal
 
 from psiaudio import pipeline
 from psiaudio.pipeline import normalize_index
+from psiaudio import util
 
 
 @pytest.fixture
@@ -406,10 +407,40 @@ def test_detrend(fs, data_fixture, detrend_mode, request):
             )
 
     actual = pipeline.concat(feed_pipeline(cb, data), -3)
-    print(actual.shape)
     np.testing.assert_array_almost_equal(actual, expected)
 
     assert actual.shape == (3, n_channels, epoch_samples)
     assert actual.channel == expected_channels
     expected_md = [{**data.metadata, **{'epoch': e}} for e in 'ABC']
     assert actual.metadata == expected_md
+
+
+@pytest.mark.parametrize('data_fixture', ['data1d', 'data2d'])
+def test_transform(fs, data_fixture, request):
+    data = request.getfixturevalue(data_fixture)
+    cb = partial(pipeline.transform, lambda x: x * 2)
+    actual = feed_pipeline(cb, data)
+    actual = pipeline.concat(actual, axis=-1)
+
+    assert actual.shape == data.shape
+    assert actual.channel == data.channel
+    assert actual.metadata == data.metadata
+    np.testing.assert_array_equal(data * 2, actual)
+
+
+def test_mc_reference(fs, data2d):
+    matrix = util.diff_matrix(2, 'all')
+    cb = partial(pipeline.mc_reference, matrix)
+    actual = feed_pipeline(cb, data2d)
+    actual = pipeline.concat(actual, axis=-1)
+    assert actual.shape == data2d.shape
+    assert actual.channel == data2d.channel
+    assert actual.metadata == data2d.metadata
+    np.testing.assert_array_equal(matrix @ data2d, actual)
+
+
+# TODO TEST:
+# * mc_select
+# * accumulate
+# * downsample, decimate, discard, threshold, capture, delay, events_to_info,
+# reject-epochs, average
