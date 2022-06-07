@@ -117,7 +117,7 @@ def test_pipeline_data_2d(data1d, data2d):
     data = data1d[np.newaxis]
 
     assert data.channel == [None]
-    assert data.epochs is None
+    assert data.metadata == md
 
     # Check basic time-slicing
     data[..., ::4]
@@ -308,13 +308,17 @@ def test_extract_epochs(fs, data_fixture, request):
     epoch_size = 0.1
     epoch_samples = int(round(epoch_size * data.fs))
     cb = partial(pipeline.extract_epochs, data.fs, queue, epoch_size, 0, 0)
-    queue.append({'t0': 0.1, 'metadata': {'epoch': 'A'}})
-    queue.append({'t0': 0.2, 'metadata': {'epoch': 'B'}})
-    queue.append({'t0': 0.3, 'metadata': {'epoch': 'C'}})
+
+    expected_md = []
+    for i, e in enumerate('ABC'):
+        t0 = (i+1) * 0.1
+        queue.append({'t0': t0, 'metadata': {'epoch': e}})
+        new_md = {'epoch': e, 't0': t0, 'poststim_time': 0, 'epoch_size': 0.1}
+        expected_md.append({**data.metadata, **new_md})
+
     result = pipeline.concat(feed_pipeline(cb, data), -3)
     assert result.shape == (3, n_channels, epoch_samples)
     assert result.channel == expected_channels
-    expected_md = [{**data.metadata, **{'epoch': e}} for e in 'ABC']
     assert result.metadata == expected_md
 
 
@@ -401,12 +405,15 @@ def test_detrend(fs, data_fixture, detrend_mode, request):
 
     queue = deque()
     expected = []
-    for i, name in enumerate('ABC'):
+    expected_md = []
+    for i, e in enumerate('ABC'):
         t0 = (i + 1) / 10
-        queue.append({'t0': t0, 'metadata': {'epoch': name}})
+        queue.append({'t0': t0, 'metadata': {'epoch': e}})
         lb = int(round(t0 * fs))
         ub = lb + epoch_samples
         expected.append(data[..., lb:ub])
+        new_md = {'epoch': e, 't0': t0, 'poststim_time': 0, 'epoch_size': 0.1}
+        expected_md.append({**data.metadata, **new_md})
     expected = pipeline.concat(expected, axis=-3)
 
     if detrend_mode is not None:
@@ -436,7 +443,6 @@ def test_detrend(fs, data_fixture, detrend_mode, request):
 
     assert actual.shape == (3, n_channels, epoch_samples)
     assert actual.channel == expected_channels
-    expected_md = [{**data.metadata, **{'epoch': e}} for e in 'ABC']
     assert actual.metadata == expected_md
 
 

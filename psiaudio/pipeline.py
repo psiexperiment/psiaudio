@@ -168,7 +168,6 @@ class PipelineData(np.ndarray):
             result.metadata = None
             return result
 
-
     def __repr__(self):
         result = f'Pipeline > s0: {self.s0}, fs: {self.fs}, shape: {self.shape}'
         return result
