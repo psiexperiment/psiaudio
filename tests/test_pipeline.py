@@ -234,6 +234,31 @@ def test_pipeline_data_concat_epochs(fs):
     assert actual.metadata == md
 
 
+def test_pipeline_attrs_1d(data1d):
+    assert data1d.n_channels == 1
+    assert data1d.n_time == 100000
+    assert data1d[:500].n_channels == 1
+    assert data1d[:500].n_time == 500
+    assert data1d[::2].n_channels == 1
+    assert data1d[::2].n_time == 50000
+    assert data1d[np.newaxis].n_channels == 1
+    assert data1d[np.newaxis].n_time == 100000
+
+
+def test_pipeline_attrs_2d(data2d):
+    assert data2d.n_channels == 2
+    assert data2d.n_time == 100000
+    assert data2d[..., :500].n_channels == 2
+    assert data2d[..., :500].n_time == 500
+    assert data2d[..., ::2].n_channels == 2
+    assert data2d[..., ::2].n_time == 50000
+    assert data2d[np.newaxis].n_channels == 2
+    assert data2d[np.newaxis].n_time == 100000
+
+    assert data2d[0].n_channels == 1
+    assert data2d[:1].n_channels == 1
+
+
 def feed_pipeline(cb, data, include_offset=False):
     result = []
     o = 0

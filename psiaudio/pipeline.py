@@ -60,6 +60,14 @@ def normalize_index(index, ndim):
 
 class PipelineData(np.ndarray):
 
+    @property
+    def n_time(self):
+        return self.shape[-1]
+
+    @property
+    def n_channels(self):
+        return 1 if self.ndim == 1 else self.shape[-2]
+
     def __new__(cls, arr, fs, s0=0, channel=None, metadata=None):
         obj = np.asarray(arr).view(cls)
         obj.fs = fs
@@ -106,7 +114,7 @@ class PipelineData(np.ndarray):
         if isinstance(time_slice, int):
             # Before we implement this, we need to have some way of tracking
             # dimensionality (e.g., if ndim=1, what dimension has been
-            # preserved, time, channel, etc.?
+            # preserved, time, channel, etc.?).
             raise NotImplementedError
             obj.s0 += time_slice
         else:
