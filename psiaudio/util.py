@@ -30,8 +30,10 @@ def dbtopa(db):
     '''
     Convert dB SPL to Pascal
 
-    .. math:: 10^(dB/20.0)/20e-6
+    .. math:: 10^{dB/20.0}/(20\cdot10^{-6})
 
+    >>> round(dbtopa(94), 4)
+    1.0024
     >>> dbtopa(100)
     2.0
     >>> dbtopa(120)
@@ -40,8 +42,10 @@ def dbtopa(db):
     94.0
 
     Will also take sequences:
+
     >>> print(dbtopa([80, 100, 120]))
     [ 0.2  2.  20. ]
+
     '''
     return dbi(db, 20e-6)
 
@@ -600,6 +604,7 @@ def interleave_octaves(freqs, min_octaves=1):
     Buran et al.
 
     This function works with both kHz and Hz.
+
     >>> interleave_octaves([2, 2.8, 4, 5.6, 8])
     [8, 4, 2, 5.6, 2.8]
     >>> interleave_octaves([2000, 2800, 4000, 5600, 8000])
@@ -608,12 +613,14 @@ def interleave_octaves(freqs, min_octaves=1):
     If a set of frequencies cannot appropriately be ordered, a ValueError is
     raised. In this example, the first and last frequences are within one
     octave.
+
     >>> interleave_octaves([2000, 2800, 4000])
     Traceback (most recent call last):
       ...
     ValueError: Unable to interleave 4000, 2000, 2800 appropriately.
 
     You can use a different octave spacing.
+
     >>> interleave_octaves([2000, 2800, 4000], 0.5)
     [4000, 2800, 2000]
     '''

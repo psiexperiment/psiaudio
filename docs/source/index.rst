@@ -14,6 +14,12 @@ For now, we only have galleries.
 
    gallery/index
 
+.. toctree::
+   :maxdepth: 2
+   :caption: API:
+
+   api/psiaudio
+
 .. 
     Indices and tables
     ------------------
