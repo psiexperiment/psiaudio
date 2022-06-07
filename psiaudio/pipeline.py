@@ -531,7 +531,7 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
         while removed_queue:
             info = removed_queue.popleft()
 
-            # This is a uinique
+            # This is a unique identifier.
             key = info['t0'], info.get('key', None)
             if key not in epoch_coroutines:
                 n_remove += 1
@@ -584,7 +584,7 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
                 for prior_sample in prior_samples:
                     epoch_coroutine.send(prior_sample)
                 if key in epoch_coroutines:
-                    raise ValueError('Duplicate epochs not supported')
+                    raise ValueError(f'Duplicate epochs not supported. Got {key}.')
                 epoch_coroutines[key] = epoch_coroutine
             except StopIteration:
                 pass
