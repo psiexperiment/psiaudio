@@ -779,6 +779,8 @@ def load_wav(fs, filename, level, calibration):
         waveform_resampled = util.resample_fft(waveform, file_fs, fs)
         return waveform_resampled
 
+    return waveform
+
 
 class WavFileFactory(FixedWaveform):
 

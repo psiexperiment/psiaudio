@@ -553,7 +553,7 @@ class BlockedFIFOSignalQueue(GroupedFIFOSignalQueue):
     presented.
     '''
     def __init__(self, fs=None, *args, **kwargs):
-        super().__init__(fs, group_size=0, *args, **kwargs)
+        super().__init__(group_size=0, fs=fs, *args, **kwargs)
 
     def append(self, *args, **kwargs):
         self._group_size += 1

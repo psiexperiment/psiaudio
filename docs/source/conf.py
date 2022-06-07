@@ -65,7 +65,7 @@ html_static_path = ['_static']
 
 # Sphinx Gallery configuration
 sphinx_gallery_conf = {
-    'examples_dirs': ['../../examples'],
+    'examples_dirs': ['../../examples/gallery'],
     'backreferences_dir': 'gen_modules/back_references',
     'filename_pattern': '^((?!sgskip).)*$',
     'doc_module': ('psiaudio'),

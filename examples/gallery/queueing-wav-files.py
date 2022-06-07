@@ -25,7 +25,7 @@ from psiaudio.queue import (BlockedRandomSignalQueue, BlockedFIFOSignalQueue,
 # instances (i.e., a subclass of ``Waveform``). Queues require all stimuli
 # to be a subclass of ``Waveform``).
 fs = 100e3
-base_path = 'wav-files'
+base_path = '../wav-files'
 wavfiles = wavs_from_path(fs, base_path)
 
 # Plot each waveform to illustrate what the individual stimuli look like.
@@ -100,7 +100,7 @@ plot_queue(queue, n_samples)
 # In the following example, the group size is 3, creating two sub-blocks:
 #
 #     A B C A B C A B C D E F D E F D E F
-queue = GroupedFIFOSignalQueue(fs, group_size=3)
+queue = GroupedFIFOSignalQueue(group_size=3, fs=fs)
 queue.extend(wavfiles, 3)
 plot_queue(queue, n_samples)
 
