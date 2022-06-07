@@ -844,7 +844,7 @@ def events_to_info(trigger_edge, base_info, target):
 
 
 @coroutine
-def reject_epochs(reject_threshold, mode, status, valid_target):
+def reject_epochs(reject_threshold, mode, status_cb, valid_target):
     if mode == 'absolute value':
         accept = lambda s: np.max(np.abs(s)) < reject_threshold
     elif mode == 'amplitude':
@@ -856,12 +856,5 @@ def reject_epochs(reject_threshold, mode, status, valid_target):
         valid = [e for e in epochs if accept(e)]
         if len(valid):
             valid_target(valid)
-
-        def update():
-            # Update the status. Must be wrapped in a deferred call to ensure
-            # that the update occurs on the GUI thread.
-            status.total += len(epochs)
-            status.rejects += len(epochs) - len(valid)
-            status.reject_percent = status.rejects / status.total * 100
-
-        deferred_call(update)
+        if status_cb is not None:
+            status_cb(len(epochs), len(valid))
