@@ -454,8 +454,9 @@ def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
 
 
 @coroutine
-def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
-                   empty_queue_cb=None, removed_queue=None):
+def extract_epochs(fs, queue, epoch_size, buffer_size, target,
+                   empty_queue_cb=None, removed_queue=None, prestim_time=0,
+                   poststim_time=0):
     '''
     Coroutine to facilitate extracting epochs from an incoming stream of data
 
@@ -476,9 +477,6 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
     epoch_size : {None, float}
         Size of epoch to extract, in seconds. If None, than the dictionaries
         (provided via the queue) must contain a `duration` key.
-    poststim_time : float
-        Additional time to capture beyond the specified epoch size (or
-        `duration`).
     buffer_size : float
         Duration of samples to buffer in memory. If you anticipate needing to
         "look back" and capture some epochs after the samples have already been
@@ -494,6 +492,11 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
         contain at least the `t0` key and the `key` (if originally provided via
         `queue`). If the epoch has not been fully captured yet, this epoch will
         be removed from the list of epochs to capture.
+    prestim_time : float
+        Additional time to capture before the specified epoch start.
+    poststim_time : float
+        Additional time to capture beyond the specified epoch size (or
+        `duration`).
     '''
     # The variable `tlb` tracks the number of samples that have been acquired
     # and reflects the lower bound of `data`. For example, if we have acquired
@@ -575,11 +578,12 @@ def extract_epochs(fs, queue, epoch_size, poststim_time, buffer_size, target,
             n_queued += 1
 
             # Figure out how many samples to capture for that epoch
-            t0 = round(info['t0'] * fs)
+            info['prestim_time'] = prestim_time
             info['poststim_time'] = poststim_time
             info['epoch_size'] = epoch_size if epoch_size else info['duration']
-            total_epoch_size = info['epoch_size'] + poststim_time
+            total_epoch_size = info['epoch_size'] + poststim_time + prestim_time
             epoch_samples = round(total_epoch_size * fs)
+            t0 = round((info['t0'] - prestim_time) * fs)
             epoch_coroutine = capture_epoch(t0, epoch_samples, info,
                                             epochs.append, fs)
 
