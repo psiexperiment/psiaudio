@@ -237,3 +237,20 @@ def test_diff_matrix():
     matrix = util.diff_matrix(8, 'A', labels='ABCDEFGH')
     assert np.all(np.abs(matrix[:, :0]) == 1)
     assert np.all(matrix.sum(axis=1) == 0)
+
+
+def test_apply_diff_matrix():
+    m = util.diff_matrix(4, [1, 2, 3])
+
+    n_samples = 1000
+    t = np.arange(n_samples) / n_samples
+    s0 = np.sin(2 * np.pi * 10 * t)
+    s1 = np.zeros_like(s0)
+    s2 = np.zeros_like(s0)
+    s3 = np.zeros_like(s0)
+    noise = np.random.uniform(size=1000)
+
+    data_clean = np.vstack((s0, s1, s2, s3))
+    data_noisy = data_clean + noise
+    data_cleaned = m @ data_noisy
+    np.testing.assert_array_almost_equal(data_clean, data_cleaned)
