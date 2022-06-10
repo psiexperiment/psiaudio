@@ -374,7 +374,7 @@ def blocked(block_size, target):
 
 
 @coroutine
-def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
+def capture_epoch(epoch_s0, epoch_samples, info, target, fs=None,
                   auto_send=False):
     '''
     Coroutine to facilitate capture of a single epoch
@@ -392,10 +392,9 @@ def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
     info : dict
         Dictionary of metadata that will be passed along to downstream
         coroutines (i.e., the callback).
-    callback : callable
-        Callable that receives a single argument. The argument will be a
-        dictionary with two keys (`signal` and `info`) where `signal` is the
-        epoch and `info` is information regarding the epoch.
+    target : callable
+        Callable that receives a single argument. The argument will be an
+        instance of PipelineData with three dimensions (epoch, channel, time).
     auto_send : bool
         If true, automatically send samples as they are acquired.
     '''
@@ -414,7 +413,7 @@ def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
             # We have missed the start of the epoch. Notify the callback of this
             m = 'Missed samples for epoch of %d samples starting at %d'
             log.warning(m, epoch_samples, epoch_s0)
-            callback(PipelineData([], fs=fs, s0=epoch_s0, metadata=md))
+            target(PipelineData([], fs=fs, s0=epoch_s0, metadata=md))
             break
 
         elif current_s0 <= (slb + samples):
@@ -432,8 +431,9 @@ def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
             # TODO: Not in love with this approach. I don't like the idea of
             # squashing md and info into existing metadata, but I don't want to
             # add additional attributes to PipelineData.
-            c.metadata.update(md)
-            c.metadata.update(info)
+            if hasattr(c, 'metadata'):
+                c.metadata.update(md)
+                c.metadata.update(info)
 
             accumulated_data.append(c)
             current_s0 += d
@@ -442,19 +442,19 @@ def capture_epoch(epoch_s0, epoch_samples, info, callback, fs=None,
             if auto_send:
                 # TODO: Not tested
                 accumulated_data = concat(accumulated_data, axis=-1)
-                callback(accumulated_data)
+                target(accumulated_data)
                 accumulated_data = []
                 if epoch_samples == 0:
                     break
 
             elif epoch_samples == 0:
                 data = concat(accumulated_data, axis=-1)
-                callback(data)
+                target(data)
                 break
 
 
 @coroutine
-def extract_epochs(fs, queue, epoch_size, buffer_size, target,
+def extract_epochs(fs, queue, epoch_size, target, buffer_size=0,
                    empty_queue_cb=None, removed_queue=None, prestim_time=0,
                    poststim_time=0):
     '''
@@ -608,7 +608,11 @@ def extract_epochs(fs, queue, epoch_size, buffer_size, target,
         # Once the new segment of data has been processed, pass all complete
         # epochs along to the next target.
         if len(epochs) != 0:
-            target(concat(epochs[:], axis=-3))
+            if isinstance(epochs[0], PipelineData):
+                merged = concat(epochs, axis=-3)
+            else:
+                merged = np.concatenate([e[np.newaxis] for e in epochs], axis=0)
+            target(merged)
             epochs[:] = []
 
         # Check to see if any of the cached samples are older than the

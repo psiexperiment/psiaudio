@@ -213,8 +213,9 @@ def test_fifo_queue_pause_with_requeue(fs):
     # int() instead of round() with quirky sample rates (e.g., like with the
     # RZ6).
     n = len(t1_waveform)
-    t1_waveforms = np.vstack([w['signal'] for w in waveforms[:100]])
-    t2_waveforms = np.vstack([w['signal'] for w in waveforms[100:]])
+    waveforms = np.vstack(waveforms)
+    t1_waveforms = waveforms[:100]
+    t2_waveforms = waveforms[100:]
 
     assert np.all(t1_waveforms[:, :n] == t1_waveform)
     assert np.all(t2_waveforms[:, :n] == t2_waveform)
@@ -302,7 +303,7 @@ def test_fifo_queue_ordering(fs):
                                epoch_size=None,
                                poststim_time=0,
                                buffer_size=0,
-                               target=waveforms.extend,
+                               target=waveforms.append,
                                empty_queue_cb=mark_empty)
 
     waveform = queue.pop_buffer(samples)
@@ -315,7 +316,7 @@ def test_fifo_queue_ordering(fs):
     for md in metadata[trials:]:
         assert k2 == md['key']
 
-    waveforms = np.vstack([w['signal'] for w in waveforms])
+    waveforms = np.concatenate(waveforms, axis=0)
     assert waveforms.shape == (trials * 2, epoch_samples)
     for w in waveforms[:trials]:
         assert np.all(w == waveforms[0])
@@ -344,7 +345,7 @@ def test_interleaved_fifo_queue_ordering(fs):
                                epoch_size=None,
                                poststim_time=0,
                                buffer_size=0,
-                               target=waveforms.extend,
+                               target=waveforms.append,
                                empty_queue_cb=mark_empty)
 
     waveform = queue.pop_buffer(samples)
@@ -358,7 +359,7 @@ def test_interleaved_fifo_queue_ordering(fs):
     for md in metadata[1::2]:
         assert k2 == md['key']
 
-    waveforms = np.vstack([w['signal'] for w in waveforms])
+    waveforms = np.concatenate(waveforms, axis=0)
     assert waveforms.shape == (trials * 2, epoch_samples)
     for w in waveforms[::2]:
         assert np.all(w == waveforms[0])
@@ -501,7 +502,7 @@ def test_rebuffering(fs):
                                poststim_time=0,
                                buffer_size=0,
                                epoch_size=8.5e-3,
-                               target=waveforms.extend)
+                               target=waveforms.append)
 
     # Default tone duration is 5e-3
     tone_duration = tones[0].duration
@@ -544,7 +545,7 @@ def test_rebuffering(fs):
     # Check that we have the expected number of epochs acquired
     #assert len(waveforms) == (len(frequencies) * trials)
 
-    epochs = np.vstack([w['signal'] for w in waveforms])
+    epochs = np.concatenate(waveforms, axis=0)
     epochs.shape = len(frequencies), trials, -1
 
     # Make sure epochs 1 ... end are equal to epoch 0

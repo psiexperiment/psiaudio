@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 import pandas as pd
 
-from psiaudio.api import (
+from psiaudio.calibration import (
     CalibrationNFError, CalibrationTHDError, FlatCalibration,
     InterpCalibration, PointCalibration,
 )
