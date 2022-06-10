@@ -106,6 +106,7 @@ def shaped_noise_gains(fs, request):
     }
 
 
+@pytest.mark.slow
 def test_shaped_noise(fs, stim_level, stim_duration, shaped_noise_gains,
                       stim_calibration):
     if stim_level == 80:
@@ -127,6 +128,7 @@ def test_shaped_noise(fs, stim_level, stim_duration, shaped_noise_gains,
                        stim_calibration)
 
 
+@pytest.mark.slow
 def test_shaped_noise_factory(fs, stim_level, shaped_noise_gains,
                               stim_calibration, chunksize, n_chunks):
     kwargs = dict(fs=fs, level=stim_level, gains=shaped_noise_gains,
