@@ -259,7 +259,7 @@ def test_square_wave(fs, square_wave_duty_cycle):
     else:
         assert set(waveform) == {0, level}
     assert waveform.mean() == \
-        pytest.approx(level * square_wave_duty_cycle, abs=1e-4)
+        pytest.approx(level * square_wave_duty_cycle, abs=2e-4)
 
 
 ################################################################################

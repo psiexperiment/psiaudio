@@ -262,7 +262,7 @@ def test_pipeline_attrs_2d(data2d):
 def feed_pipeline(cb, data, include_offset=False):
     result = []
     o = 0
-    cr = cb(result.append)
+    cr = cb(target=result.append)
     while o < data.shape[-1]:
         try:
             i = np.random.randint(low=10, high=100)
@@ -293,7 +293,6 @@ def test_capture_epoch(fs, data, request):
     assert result[0].channel == expected.channel
 
 
-
 @pytest.mark.parametrize('data_fixture,', ['data1d', 'data2d'])
 def test_extract_epochs(fs, data_fixture, request):
     if data_fixture == 'data1d':
@@ -307,13 +306,15 @@ def test_extract_epochs(fs, data_fixture, request):
     queue = deque()
     epoch_size = 0.1
     epoch_samples = int(round(epoch_size * data.fs))
-    cb = partial(pipeline.extract_epochs, data.fs, queue, epoch_size, 0, 0)
+    cb = partial(pipeline.extract_epochs, fs=data.fs, queue=queue,
+                 epoch_size=epoch_size, buffer_size=0)
 
     expected_md = []
     for i, e in enumerate('ABC'):
         t0 = (i+1) * 0.1
         queue.append({'t0': t0, 'metadata': {'epoch': e}})
-        new_md = {'epoch': e, 't0': t0, 'poststim_time': 0, 'epoch_size': 0.1}
+        new_md = {'epoch': e, 't0': t0, 'poststim_time': 0, 'epoch_size': 0.1,
+                  'prestim_time': 0}
         expected_md.append({**data.metadata, **new_md})
 
     result = pipeline.concat(feed_pipeline(cb, data), -3)
@@ -412,7 +413,8 @@ def test_detrend(fs, data_fixture, detrend_mode, request):
         lb = int(round(t0 * fs))
         ub = lb + epoch_samples
         expected.append(data[..., lb:ub])
-        new_md = {'epoch': e, 't0': t0, 'poststim_time': 0, 'epoch_size': 0.1}
+        new_md = {'epoch': e, 't0': t0, 'poststim_time': 0, 'epoch_size': 0.1,
+                  'prestim_time': 0}
         expected_md.append({**data.metadata, **new_md})
     expected = pipeline.concat(expected, axis=-3)
 
@@ -427,12 +429,10 @@ def test_detrend(fs, data_fixture, detrend_mode, request):
 
         return \
             pipeline.extract_epochs(
-                data.fs,
-                queue,
-                epoch_size,
-                0,
-                0,
-                pipeline.detrend(
+                fs=data.fs,
+                queue=queue,
+                epoch_size=epoch_size,
+                target=pipeline.detrend(
                     detrend_mode,
                     target
                 ).send
