@@ -93,8 +93,9 @@ def test_bandlimited_noise_factory(fs, stim_level, stim_fl, stim_fh,
                               n_chunks)
 
 
-@pytest.fixture
-def shaped_noise_gains(fs, stim_fl, stim_fh):
+@pytest.fixture(scope='module', params=[(1e3, 2e3), (4e3, 8e3)])
+def shaped_noise_gains(fs, request):
+    stim_fl, stim_fh = request.param
     return {
         0: 0,
         stim_fl * 0.99: 0,
@@ -107,6 +108,11 @@ def shaped_noise_gains(fs, stim_fl, stim_fh):
 
 def test_shaped_noise(fs, stim_level, stim_duration, shaped_noise_gains,
                       stim_calibration):
+    if stim_level == 80:
+        pytest.skip()
+    if stim_duration == 0.1:
+        pytest.skip()
+
     if stim_duration == 0.001:
         abs_difference = 5
     elif stim_duration == 0.01:
