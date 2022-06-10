@@ -14,7 +14,7 @@ extras_require = {
     'examples': ['sounddevice'],
     'docs': ['sphinx', 'sphinx_gallery', 'sphinx_rtd_theme', 'pygments-enaml',
              'sounddevice'],
-    'test': ['pytest', 'pytest-benchmark'],
+    'test': ['pytest', 'pytest-benchmark', 'pytest-xdist'],
 }
 
 
