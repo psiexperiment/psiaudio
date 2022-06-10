@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+markers = [
+    "slow: runs tests that will otherwise be skipped because they are slow"
+]
