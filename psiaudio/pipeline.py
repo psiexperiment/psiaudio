@@ -153,7 +153,12 @@ class PipelineData(np.ndarray):
             elif len(obj.metadata) != 1:
                 raise ValueError('Too many entries for metadata')
         elif epoch_slice is not skip:
-            obj.metadata = obj.metadata[epoch_slice]
+            if isinstance(epoch_slice, list):
+                obj.metadata = [obj.metadata[s] for s in epoch_slice]
+            elif isinstance(epoch_slice, (int, slice)):
+                obj.metadata = obj.metadata[epoch_slice]
+            else:
+                raise ValueError(f'Unrecognized epoch slice {epoch_slice}')
 
         return obj
 
@@ -185,7 +190,7 @@ class PipelineData(np.ndarray):
             return result
 
     def __repr__(self):
-        return str(result)
+        return str(self)
 
     def __str__(self):
         result = f'Pipeline > s0: {self.s0}, fs: {self.fs}, channel: {self.channel}, shape: {self.shape}'
@@ -876,15 +881,33 @@ def events_to_info(trigger_edge, base_info, target):
 @coroutine
 def reject_epochs(reject_threshold, mode, status_cb, valid_target):
     if mode == 'absolute value':
-        accept = lambda s: np.max(np.abs(s)) < reject_threshold
+        accept = lambda s: np.max(np.abs(s), axis=-1) < reject_threshold
     elif mode == 'amplitude':
-        accept = lambda s: np.ptp(s) < reject_threshold
+        accept = lambda s: np.ptp(s, axis=-1) < reject_threshold
 
     while True:
-        epochs = (yield)
+        data = (yield)
+        if isinstance(data, PipelineData):
+            if data.n_channels != 1:
+                raise ValueError('Not supported for multichannel data')
+            if data.n_epochs is None:
+                raise ValueError('Not supported for un-epoched data')
+        else:
+            if data.ndim != 3:
+                raise ValueError('Must have 3 dimensions (epoch, channel, time)')
+            elif data.shape[1] != 1:
+                raise ValueError('Only one channel supported')
+
         # Check for valid epochs and send them if there are any
-        valid = [e for e in epochs if accept(e)]
-        if len(valid):
-            valid_target(valid)
+        mask = accept(np.asarray(data))[:, 0]
+        log.error(mask)
+
+        valid_data = data[mask]
+        n = len(data)
+        n_accept = len(valid_data)
+        print(n, n_accept)
+
+        if n_accept != 0:
+            valid_target(valid_data)
         if status_cb is not None:
-            status_cb(len(epochs), len(valid))
+            status_cb(n, n_accept)

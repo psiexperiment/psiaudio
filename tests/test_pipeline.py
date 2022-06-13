@@ -14,6 +14,43 @@ from psiaudio.pipeline import normalize_index
 from psiaudio import util
 
 
+################################################################################
+# utility functions and fixtures
+################################################################################
+def assert_pipeline_data_equal(a, b):
+    np.testing.assert_array_equal(a, b)
+    assert a.channel == b.channel
+    assert a.metadata == b.metadata
+
+
+def assert_pipeline_data_almost_equal(a, b, *args, **kw):
+    np.testing.assert_array_almost_equal(a, b, *args, **kw)
+    assert a.channel == b.channel
+    assert a.metadata == b.metadata
+
+
+def queue_epochs(data):
+    fs = data.fs
+    epoch_size = 0.1
+    epoch_samples = int(round(epoch_size * fs))
+
+    queue = deque()
+    expected = []
+    expected_md = []
+    for i, e in enumerate('ABC'):
+        t0 = (i + 1) / 10
+        queue.append({'t0': t0, 'metadata': {'epoch': e}})
+        lb = int(round(t0 * fs))
+        ub = lb + epoch_samples
+        expected.append(data[..., lb:ub])
+        new_md = {'epoch': e, 't0': t0, 'poststim_time': 0, 'epoch_size': 0.1,
+                  'prestim_time': 0}
+        expected_md.append({**data.metadata, **new_md})
+    expected = pipeline.concat(expected, axis=-3)
+    expected.metadata = expected_md
+    return queue, expected, epoch_size
+
+
 @pytest.fixture
 def data1d(fs):
     md = {'foo': 'bar'}
@@ -29,6 +66,17 @@ def data2d(fs):
     return pipeline.PipelineData(data, fs, channel=channel, metadata=md)
 
 
+@pytest.fixture
+def data3d(fs):
+    md = [{'foo': 'bar'}, {'foo': 'baz'}, {'foo': 'biz'}]
+    channel = ['channel1', 'channel2']
+    data = np.random.uniform(size=(3, 2, 1000))
+    return pipeline.PipelineData(data, fs, channel=channel, metadata=md)
+
+
+################################################################################
+# unit tests
+################################################################################
 def test_normalize_index():
     assert normalize_index(np.s_[np.newaxis], 1) == (np.newaxis, slice(None))
     assert normalize_index(np.s_[...], 1) == (slice(None),)
@@ -185,15 +233,19 @@ def test_pipeline_data_2d(data1d, data2d):
 
     # Test to make sure that list-like preservation of channel is preserved if
     # we pull out a single channel but preserve dimensionality.
-    log.error(data.channel)
     assert data2d[[0]].channel == ['channel1']
     assert data2d[[0]].ndim == 2
     assert data2d[[0, 1]].channel == ['channel1', 'channel2']
     assert data2d[[0, 1]].ndim == 2
 
 
-def test_pipeline_data_3d(data1d):
-    # Upcast to 2D
+def test_pipeline_data_3d(data1d, data3d):
+    assert data3d[[1]].metadata == [data3d.metadata[1]]
+    assert data3d[1].metadata == data3d.metadata[1]
+    assert data3d[[0, 2]].metadata == [data3d.metadata[0], data3d.metadata[2]]
+    assert data3d[[0, 2], [0]].channel == [data3d.channel[0]]
+
+    # Upcast to 3D
     md = data1d.metadata.copy()
     fs = data1d.fs
     data = data1d[np.newaxis, np.newaxis]
@@ -314,24 +366,13 @@ def test_extract_epochs(fs, data_fixture, request):
         expected_channels = ['channel1', 'channel2']
     data = request.getfixturevalue(data_fixture)
 
-    queue = deque()
-    epoch_size = 0.1
+    queue, expected, epoch_size = queue_epochs(data)
     epoch_samples = int(round(epoch_size * data.fs))
     cb = partial(pipeline.extract_epochs, fs=data.fs, queue=queue,
                  epoch_size=epoch_size, buffer_size=0)
 
-    expected_md = []
-    for i, e in enumerate('ABC'):
-        t0 = (i+1) * 0.1
-        queue.append({'t0': t0, 'metadata': {'epoch': e}})
-        new_md = {'epoch': e, 't0': t0, 'poststim_time': 0, 'epoch_size': 0.1,
-                  'prestim_time': 0}
-        expected_md.append({**data.metadata, **new_md})
-
-    result = pipeline.concat(feed_pipeline(cb, data), -3)
-    assert result.shape == (3, n_channels, epoch_samples)
-    assert result.channel == expected_channels
-    assert result.metadata == expected_md
+    actual = pipeline.concat(feed_pipeline(cb, data), -3)
+    assert_pipeline_data_equal(actual, expected)
 
 
 @pytest.mark.parametrize('data,', ['data1d', 'data2d'])
@@ -411,31 +452,16 @@ def test_detrend(fs, data_fixture, detrend_mode, request):
     with pytest.raises(ValueError):
         actual = feed_pipeline(cb, data)
 
-    fs = data.fs
-    epoch_size = 0.1
-    epoch_samples = int(round(epoch_size * fs))
-
-    queue = deque()
-    expected = []
-    expected_md = []
-    for i, e in enumerate('ABC'):
-        t0 = (i + 1) / 10
-        queue.append({'t0': t0, 'metadata': {'epoch': e}})
-        lb = int(round(t0 * fs))
-        ub = lb + epoch_samples
-        expected.append(data[..., lb:ub])
-        new_md = {'epoch': e, 't0': t0, 'poststim_time': 0, 'epoch_size': 0.1,
-                  'prestim_time': 0}
-        expected_md.append({**data.metadata, **new_md})
-    expected = pipeline.concat(expected, axis=-3)
+    queue, expected, epoch_size = queue_epochs(data)
+    epoch_samples = int(round(data.fs * epoch_size))
 
     if detrend_mode is not None:
-        expected = signal.detrend(expected, axis=-1, type=detrend_mode)
+        expected[:] = signal.detrend(expected, axis=-1, type=detrend_mode)
 
     def cb(target):
+        nonlocal data
         nonlocal detrend_mode
         nonlocal queue
-        nonlocal fs
         nonlocal epoch_size
 
         return \
@@ -450,11 +476,7 @@ def test_detrend(fs, data_fixture, detrend_mode, request):
             )
 
     actual = pipeline.concat(feed_pipeline(cb, data), -3)
-    np.testing.assert_array_almost_equal(actual, expected)
-
-    assert actual.shape == (3, n_channels, epoch_samples)
-    assert actual.channel == expected_channels
-    assert actual.metadata == expected_md
+    assert_pipeline_data_almost_equal(actual, expected)
 
 
 @pytest.mark.parametrize('data_fixture', ['data1d', 'data2d'])
@@ -481,24 +503,76 @@ def test_mc_reference(fs, data2d):
     np.testing.assert_array_equal(matrix @ data2d, actual)
 
 
-def test_reject():
+def test_basic_reject_epochs():
     def status_cb(n, v):
         print(f'{v} of {n} valid')
 
     result = []
-    p = pipeline.reject_epochs(1, 'amplitude', status_cb, result.append)
+    p = pipeline.reject_epochs(1, 'amplitude', status_cb, result.extend)
 
     for i in range(10):
-        s = np.zeros((1, 100))
+        s = np.zeros((1, 1, 100))
         p.send(s)
+
     assert len(result) == 10
     for i in range(10):
-        s = np.zeros((1, 100))
-        s[:, 0] = 2
+        s = np.zeros((1, 1, 100))
+        s[..., 0] = 2
         p.send(s)
+    assert len(result) == 10
+
+    s = np.zeros((10, 1, 100))
+    p.send(s)
+    assert len(result) == 20
+
+    s = np.zeros((10, 1, 100))
+    s[::2, :, 0] = 2
+    p.send(s)
+    assert len(result) == 25
+
+
+@pytest.mark.parametrize('data_fixture', ['data1d', 'data2d'])
+def test_reject_epochs(fs, data_fixture, detrend_mode, request):
+    data = request.getfixturevalue(data_fixture)
+
+    def cb(target):
+        nonlocal data
+        nonlocal queue
+        nonlocal epoch_size
+
+        return \
+            pipeline.extract_epochs(
+                fs=data.fs,
+                queue=queue,
+                epoch_size=epoch_size,
+                target=pipeline.reject_epochs(
+                    2,
+                    'amplitude',
+                    None,
+                    target
+                ).send
+            )
+
+    s0 = int(round(0.21 * fs))
+    if data_fixture == 'data1d':
+        data[s0] = 3
+        queue, expected, epoch_size = queue_epochs(data)
+        actual = pipeline.concat(feed_pipeline(cb, data), axis=-3)
+        assert_pipeline_data_equal(actual, expected[[0, 2]])
+    elif data_fixture == 'data2d':
+        data[1, s0] = 3
+        queue, expected, epoch_size = queue_epochs(data)
+        with pytest.raises(ValueError):
+            actual = pipeline.concat(feed_pipeline(cb, data), axis=-3)
+        queue, expected, epoch_size = queue_epochs(data)
+        actual = pipeline.concat(feed_pipeline(cb, data[1]), axis=-3)
+        # Avoid weird numpy indexing behavior
+        expected = expected[[0, 2]][:, [1]]
+        assert_pipeline_data_equal(actual, expected)
+
 
 # TODO TEST:
 # * mc_select
 # * accumulate
 # * downsample, decimate, discard, threshold, capture, delay, events_to_info,
-# reject-epochs, average
+# average
