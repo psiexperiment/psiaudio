@@ -756,7 +756,7 @@ def capture(fs, queue, target):
         if (s_next is not None) and (s_next >= s0):
             i = s_next - s0
             if i < data.shape[-1]:
-                d = data[i:]
+                d = data[..., i:]
                 d.metadata['capture'] = t_start
                 target(d)
                 s_next += d.shape[-1]
