@@ -72,6 +72,13 @@ class PipelineData(np.ndarray):
     def n_channels(self):
         return 1 if self.ndim == 1 else self.shape[-2]
 
+    @property
+    def n_epochs(self):
+        if self.ndim < 3:
+            return None
+        else:
+            return self.shape[-3]
+
     def __new__(cls, arr, fs, s0=0, channel=None, metadata=None):
         obj = np.asarray(arr).view(cls)
         obj.fs = fs
