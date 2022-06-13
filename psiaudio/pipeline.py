@@ -34,6 +34,10 @@ def normalize_index(index, ndim):
         return tuple([index] + [slice(None) for i in range(ndim - 1)])
     # If we've made it this far, we now have an indexing tuple.
 
+    # Capture edge-case where we are dealing with `x[[n]]`.
+    if isinstance(index, list):
+        index = (np.s_[index],)
+
     n_ellipsis = sum(int(i is Ellipsis) for i in index)
     if n_ellipsis > 1:
         raise IndexError('More than one ... not supported')
@@ -43,7 +47,7 @@ def normalize_index(index, ndim):
 
     norm_index = []
     for i in index:
-        if isinstance(i, (slice, int)):
+        if isinstance(i, (slice, int, list)):
             norm_index.append(i)
         elif i is np.newaxis:
             norm_index.append(np.newaxis)
@@ -80,7 +84,7 @@ class PipelineData(np.ndarray):
             if channel is None:
                 channel = [None for i in range(obj.shape[-2])]
             elif len(channel) != obj.shape[-2]:
-                raise ValueError(f'Length of channel must be {obj.shape[-2]}')
+                raise ValueError(f'Length of channel must be {obj.shape[-2]}. Got {channel}.')
         if  obj.ndim > 2:
             if metadata is None:
                 metadata = [{} for i in range(obj.shape[-3])]
@@ -129,7 +133,12 @@ class PipelineData(np.ndarray):
             elif len(obj.channel) != 1:
                 raise ValueError('Too many channels')
         elif channel_slice is not skip:
-            obj.channel = obj.channel[channel_slice]
+            if isinstance(channel_slice, list):
+                obj.channel = [obj.channel[s] for s in channel_slice]
+            elif isinstance(channel_slice, (int, slice)):
+                obj.channel = obj.channel[channel_slice]
+            else:
+                raise ValueError(f'Unrecognized channel slice {channel_slice}')
 
         if epoch_slice is np.newaxis:
             if not isinstance(obj.metadata, list):
@@ -169,11 +178,10 @@ class PipelineData(np.ndarray):
             return result
 
     def __repr__(self):
-        result = f'Pipeline > s0: {self.s0}, fs: {self.fs}, shape: {self.shape}'
-        return result
+        return str(result)
 
     def __str__(self):
-        result = f'Pipeline > s0: {self.s0}, fs: {self.fs}, shape: {self.shape}'
+        result = f'Pipeline > s0: {self.s0}, fs: {self.fs}, channel: {self.channel}, shape: {self.shape}'
         return result
 
 

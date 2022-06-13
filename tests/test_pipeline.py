@@ -1,3 +1,6 @@
+import logging
+log = logging.getLogger(__name__)
+
 import pytest
 
 from collections import deque
@@ -179,6 +182,14 @@ def test_pipeline_data_2d(data1d, data2d):
     assert data[0, 1:1].channel == None
     assert data[0, :1:1].channel == None
     assert data[0, 1:1:1].channel == None
+
+    # Test to make sure that list-like preservation of channel is preserved if
+    # we pull out a single channel but preserve dimensionality.
+    log.error(data.channel)
+    assert data2d[[0]].channel == ['channel1']
+    assert data2d[[0]].ndim == 2
+    assert data2d[[0, 1]].channel == ['channel1', 'channel2']
+    assert data2d[[0, 1]].ndim == 2
 
 
 def test_pipeline_data_3d(data1d):
