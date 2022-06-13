@@ -704,7 +704,7 @@ class SquareWaveFactory(Carrier):
 ################################################################################
 class RepeatFactory(FixedWaveform):
 
-    def __init__(self, fs, n, skip_n, rate, input_factory):
+    def __init__(self, fs, n, skip_n, rate, delay, input_factory):
         vars(self).update(locals())
         self.reset()
 
@@ -715,14 +715,20 @@ class RepeatFactory(FixedWaveform):
         self.offset = 0
         self.input_factory.reset()
         waveform = self.input_factory.get_samples_remaining()
-        self.waveform = repeat(waveform, self.fs, self.n, self.skip_n, self.rate)
+        self.waveform = repeat(waveform, self.fs, self.n, self.skip_n,
+                               self.rate, self.delay)
 
 
-def repeat(waveform, fs, n, skip_n, rate):
+def repeat(waveform, fs, n, skip_n, rate, delay=0):
     s_period = int(round(fs / rate))
     s_waveform = len(waveform)
+    s_delay = int(round(fs * delay))
+
+    if s_waveform > (s_period - s_delay):
+        raise ValueError('Waveform too long to repeat')
+
     result = np.zeros((n + skip_n, s_period))
-    result[skip_n:, :s_waveform] = waveform
+    result[skip_n:, s_delay:s_delay+s_waveform] = waveform
     return result.ravel()
 
 
