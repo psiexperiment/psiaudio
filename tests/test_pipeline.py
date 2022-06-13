@@ -470,6 +470,22 @@ def test_mc_reference(fs, data2d):
     np.testing.assert_array_equal(matrix @ data2d, actual)
 
 
+def test_reject():
+    def status_cb(n, v):
+        print(f'{v} of {n} valid')
+
+    result = []
+    p = pipeline.reject_epochs(1, 'amplitude', status_cb, result.append)
+
+    for i in range(10):
+        s = np.zeros((1, 100))
+        p.send(s)
+    assert len(result) == 10
+    for i in range(10):
+        s = np.zeros((1, 100))
+        s[:, 0] = 2
+        p.send(s)
+
 # TODO TEST:
 # * mc_select
 # * accumulate
