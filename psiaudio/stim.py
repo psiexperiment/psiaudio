@@ -761,6 +761,19 @@ class ChirpFactory(FixedWaveform):
 
 
 ################################################################################
+# Click
+################################################################################
+class ClickFactory(FixedWaveform):
+
+    def __init__(self, fs, duration, level, polarity, calibration):
+        vars(self).update(locals())
+        n = int(fs*duration)
+        sf = calibration.get_sf(0, level)
+        self.waveform = polarity * sf * np.ones(n)
+        self.reset()
+
+
+################################################################################
 # Wavfiles
 ################################################################################
 @fast_cache
