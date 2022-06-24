@@ -254,3 +254,16 @@ def test_apply_diff_matrix():
     data_noisy = data_clean + noise
     data_cleaned = m @ data_noisy
     np.testing.assert_array_almost_equal(data_clean, data_cleaned)
+
+
+def test_rms_rfft(spectrum_level, noise_band):
+    psd = np.zeros(10000)
+    lb, ub = noise_band
+    lb = int(lb)
+    ub = int(ub)
+    psd[lb:ub] = util.dbi(spectrum_level)
+    expected_level = util.spectrum_to_band_level(spectrum_level, *noise_band)
+    actual_level = util.db(util.rms_rfft(psd))
+    assert expected_level == pytest.approx(actual_level, 2)
+
+
