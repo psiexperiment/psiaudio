@@ -268,7 +268,7 @@ class AbstractSignalQueue:
         '''
         Count remaining trials
         '''
-        return int(sum(v['trials'] for v in self._data.values()))
+        return int(sum(max(v['trials'], 0) for v in self._data.values()))
 
     def count_requested_trials(self):
         '''
