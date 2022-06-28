@@ -900,7 +900,6 @@ def reject_epochs(reject_threshold, mode, status_cb, valid_target):
 
         # Check for valid epochs and send them if there are any
         mask = accept(np.asarray(data))[:, 0]
-
         valid_data = data[mask]
         n = len(data)
         n_accept = len(valid_data)
