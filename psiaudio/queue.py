@@ -56,6 +56,7 @@ class AbstractSignalQueue:
         self._notifiers = {
             'added': [],
             'removed': [],
+            'decrement': [],
         }
 
         # Is stimulus generation paused?
@@ -319,6 +320,7 @@ class AbstractSignalQueue:
         if self._data[key]['trials'] <= 0:
             self.remove_key(key)
             return True
+        self._notify('decrement', {'key': key})
         return False
 
     def _get_samples_waveform(self, samples):
