@@ -465,8 +465,9 @@ class InterleavedFIFOSignalQueue(AbstractSignalQueue):
         self._data[key]['trials'] -= n
         for key, data in self._data.items():
             if data['trials'] > 0:
-                return
+                return False
         self._complete = True
+        return True
 
     def count_trials(self):
         return sum(max(v['trials'], 0) for v in self._data.values())
@@ -535,11 +536,13 @@ class GroupedFIFOSignalQueue(FIFOSignalQueue):
         # complete.
         for key in self._ordering[:self._group_size]:
             if self._data[key]['trials'] > 0:
-                return
+                return False
 
         # If complete, remove the keys
         for key in self._ordering[:self._group_size]:
             self.remove_key(key)
+
+        return True
 
 
 class BlockedFIFOSignalQueue(GroupedFIFOSignalQueue):
