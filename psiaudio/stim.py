@@ -793,6 +793,41 @@ class ClickFactory(FixedWaveform):
 
 
 ################################################################################
+# Bandlimited Click
+################################################################################
+def bandlimited_click(fs, flb, fub, window=0.1, level=1):
+    '''
+    Generate bandlimited click.
+
+    Parameters
+    ----------
+
+    The click waveform will be symmetric around the center of the window.
+    '''
+    n_window = int(round(window * fs))
+    n = int(round(fs))
+    freq = np.fft.rfftfreq(n, d=1/fs)
+    psd = np.zeros_like(freq)
+    m = (freq >= flb) & (freq < fub)
+    psd[m] = 1
+    csd = psd * np.exp(-1j * freq * 2 * np.pi * 0.5)
+    waveform = np.fft.irfft(csd)
+    lb = int(round(n / 2 - n_window / 2))
+    waveform = waveform[lb:lb+n_window]
+    waveform /= waveform.ptp()
+    return waveform
+
+
+class BandlimitedClickFactory(FixedWaveform):
+
+    def __init__(self, fs, flb, fub, window, level, calibration):
+        vars(self).update(locals())
+        sf = calibration.get_sf(0, level)
+        self.waveform = bandlimited_click(fs, flb, fub, window)
+        self.reset()
+
+
+################################################################################
 # Wavfiles
 ################################################################################
 @fast_cache
