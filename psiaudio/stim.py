@@ -563,15 +563,7 @@ class ShapedNoiseFactory(Carrier):
     '''
     def __init__(self, fs, level, gains, ntaps=10001, window='hanning',
                  polarity=1, seed=None, calibration=None):
-
-        self.fs = fs
-        self.level = level
-        self.gains = gains
-        self.ntaps = ntaps
-        self.window = window
-        self.seed = seed
-        self.polarity = polarity
-        self.calibration = calibration
+        vars(self).update(locals())
 
         self.taps, self.initial_zi = _calculate_firwin2_taps(gains, fs, window, ntaps)
         self.sf = level if calibration is None else calibration.get_mean_sf(0, fs/2, level)
@@ -603,6 +595,33 @@ class ShapedNoiseFactory(Carrier):
 
 def shaped_noise(fs, level, gains, duration, ntaps=10001, window='hanning',
                  polarity=1, seed=1, calibration=None):
+    '''
+    Generate shaped noise using `scipy.signal.firwin2`.
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate
+    level : float
+        Level in units of calibration. If no calibration is provided, noise
+        will be scaled such that `rms(noise) == level`.
+    gains : dict
+        Dictionary mapping frequency breakpoints (Hz) to gain (dB).
+    ntaps : int
+        Number of taps to use for filter calculation. See
+        `scipy.signal.firwin2` for hints on choosing a reasonable value.
+    window : {string, (string, float), float, None}
+        Window function to use. See `window` parameter of
+        `scipy.signal.firwin2` for additional details on acceptable values.
+    polarity : {-1, 1}
+        Polarity of noise. Useful if you need to present two trials in inverted
+        polarity to cancel out electrical artifacts.
+    seed : int
+        Seed to use for random number generator.
+    calibration : {BaseCalibration, None}
+        Instance of a `psiaudio.calibration.BaseCalibration` or subclass
+        thereof. Used to determine scaling factor for noise amplitude.
+    '''
     args = locals()
     args.pop('duration')
     factory = ShapedNoiseFactory(**args)
