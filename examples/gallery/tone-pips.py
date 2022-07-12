@@ -23,7 +23,7 @@ tone1 = stim.ramped_tone(
     fs=fs,
     duration=5e-3,
     rise_time=0.5e-3,
-    frequency=5e3,
+    frequency=2e3,
     level=94,
     calibration=cal,
 )
@@ -34,7 +34,7 @@ tone1 = stim.ramped_tone(
 tone2 = stim.ramped_tone(
     fs=fs,
     duration=5e-3,
-    frequency=5e3,
+    frequency=2e3,
     level=94,
     calibration=cal,
 )
@@ -55,11 +55,11 @@ axes[1].semilogx(psd1, label='0.5 msec rise/fall')
 axes[1].semilogx(psd2, label='2.5 msec rise/fall')
 axes[1].axhline(94, ls=':')
 
-ticks = util.octave_space(250, 16e3, 1)
-axes[1].axis(xmin=ticks[0], xmax=ticks[-1], ymin=0, ymax=100)
-axes[1].set_xticks(ticks)
-axes[1].set_xticklabels(f'{t*1e-3:.2f}' for t in ticks)
-axes[1].set_xticks([], minor=True)
+###############################################################################
+# Format the axes. Note the use of psiaudio's custom scale to show ticks on an
+# octave scale.
+axes[1].set_xscale('octave')
+axes[1].axis(xmin=250, xmax=16e3, ymin=0, ymax=100)
 axes[1].set_xlabel('Frequency (kHz)')
 axes[1].set_ylabel('Amplitude (dB SPL)')
 axes[1].legend()

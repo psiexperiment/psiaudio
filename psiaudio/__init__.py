@@ -20,3 +20,10 @@ def add_logging_level(name, level):
 add_logging_level('TRACE', 5)
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
+
+
+try:
+    # Ensure that we register the OctaveScale
+    from . import plot
+except ImportError:
+    pass
