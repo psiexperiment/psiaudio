@@ -36,7 +36,7 @@ tone_complex = stim.ramped_tone(
 tone_complex = tone_complex.sum(axis=0)
 
 ###############################################################################
-# Calculate an offset such that the tone is centeredi n the time plot.
+# Calculate an offset such that the tone is centered in the time plot.
 t = np.arange(len(tone_complex)) / fs * 1e3
 
 figure, axes = plt.subplots(1, 2, figsize=(8, 4))
@@ -47,13 +47,13 @@ axes[0].set_ylabel('Amplitude (Pascals)')
 
 psd = util.patodb(util.psd_df(tone_complex, fs))
 
-axes[1].semilogx(psd)
+###############################################################################
+# Plot the spectrum. Note the use of psiaudio's custom scale to show ticks on
+# an octave scale.
+axes[1].plot(psd)
+axes[1].set_xscale('octave')
+axes[1].axis(xmin=250, xmax=16e3, ymin=0, ymax=100)
 
-ticks = util.octave_space(250, 16e3, 1)
-axes[1].axis(xmin=ticks[0], xmax=ticks[-1], ymin=0, ymax=100)
-axes[1].set_xticks(ticks)
-axes[1].set_xticklabels(f'{t*1e-3:.2f}' for t in ticks)
-axes[1].set_xticks([], minor=True)
 axes[1].set_xlabel('Frequency (kHz)')
 axes[1].set_ylabel('Amplitude (dB SPL)')
 

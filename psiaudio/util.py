@@ -595,7 +595,7 @@ def octave_space(lb, ub, step, mode='nearest'):
         lbi = np.ceil(np.log2(lb) / step) * step
         ubi = np.floor(np.log2(ub) / step) * step
     x = np.arange(lbi, ubi+step, step)
-    return 2**x
+    return 2.0**x
 
 
 def interleave_octaves(freqs, min_octaves=1):
