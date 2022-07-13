@@ -151,6 +151,15 @@ def test_pipeline_data_1d(data1d):
     n = len(data1d)
     assert data1d[n:].s0 == n
 
+    # Make sure negative slicing works
+    assert data1d[-n:].n_time == n
+    assert data1d[-n:].s0 == 0
+    assert data1d[-10:].n_time == 10
+    assert data1d[-10:].s0 == (n-10)
+    assert_pipeline_data_equal(data1d[n-10:], data1d[-10:])
+
+    assert data1d[10:][-10:].s0 == (n-10)
+
 
 def test_pipeline_data_2d(data1d, data2d):
     # TODO: add data2d[..., 0] once we add support for dimensionality
@@ -238,8 +247,19 @@ def test_pipeline_data_2d(data1d, data2d):
     assert data2d[[0, 1]].channel == ['channel1', 'channel2']
     assert data2d[[0, 1]].ndim == 2
 
+    n = data2d.n_time
+    assert data2d[..., n:].s0 == n
 
-def test_pipeline_data_3d(data1d, data3d):
+    # Make sure negative slicing works
+    assert data2d[..., -n:].n_time == n
+    assert data2d[..., -n:].s0 == 0
+    assert data2d[..., -10:].n_time == 10
+    assert data2d[..., -10:].s0 == (n-10)
+    assert_pipeline_data_equal(data2d[..., n-10:], data2d[..., -10:])
+
+    assert data2d[..., 10:][..., -10:].s0 == (n-10)
+
+def test_pipeline_data_3d(data1d, d2ta3d):
     assert data3d[[1]].metadata == [data3d.metadata[1]]
     assert data3d[1].metadata == data3d.metadata[1]
     assert data3d[[0, 2]].metadata == [data3d.metadata[0], data3d.metadata[2]]

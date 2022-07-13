@@ -130,7 +130,10 @@ class PipelineData(np.ndarray):
             obj.s0 += time_slice
         else:
             if time_slice.start is not None:
-                obj.s0 += time_slice.start
+                if time_slice.start > 0:
+                    obj.s0 += time_slice.start
+                elif time_slice.start < 0:
+                    obj.s0 = self.s0 + self.n_time + time_slice.start
             if time_slice.step is not None:
                 obj.fs /= time_slice.step
 
