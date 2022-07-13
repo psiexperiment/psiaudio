@@ -259,7 +259,7 @@ def test_pipeline_data_2d(data1d, data2d):
 
     assert data2d[..., 10:][..., -10:].s0 == (n-10)
 
-def test_pipeline_data_3d(data1d, d2ta3d):
+def test_pipeline_data_3d(data1d, data3d):
     assert data3d[[1]].metadata == [data3d.metadata[1]]
     assert data3d[1].metadata == data3d.metadata[1]
     assert data3d[[0, 2]].metadata == [data3d.metadata[0], data3d.metadata[2]]
