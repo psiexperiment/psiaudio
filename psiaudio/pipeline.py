@@ -706,7 +706,7 @@ def decimate(q, target):
     b, a = signal.cheby1(4, 0.05, 0.8 / q)
     if np.any(np.abs(np.roots(a)) > 1):
         raise ValueError('Unstable filter coefficients')
-    zf = signal.lfilter_zi(b, a)
+    zf = None
     y_remainder = None
     while True:
         if y_remainder is None:
@@ -719,8 +719,18 @@ def decimate(q, target):
             y = y[..., :-remainder]
         else:
             y_remainder = None
-        y, zf = signal.lfilter(b, a, y, zi=zf)
-        result = y[::q]
+
+        # Create the initial state for the filter (we call it zf since we will
+        # just repeatedly use this on each iteration). We can't initialize this
+        # sooner since we need to verify dimensionality of input during creation.
+        if zf is None:
+            zf = signal.lfilter_zi(b, a)
+            if y.ndim == 2:
+                zf = zf[np.newaxis]
+
+        y, zf = signal.lfilter(b, a, y, zi=zf, axis=-1)
+
+        result = y[..., ::q]
         if len(result):
             target(result)
 
