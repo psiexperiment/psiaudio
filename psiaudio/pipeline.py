@@ -811,7 +811,9 @@ def edges(initial_state, min_samples, fs, target):
     t_prior = -min_samples
     while True:
         # Wait for new data to become available
-        new_samples = (yield)
+        # TODO: How to handle n-dimensional data
+        new_samples = (yield)[0]
+
         samples = np.r_[prior_samples, new_samples]
         ts_change = np.flatnonzero(np.diff(samples, axis=-1)) + 1
         ts_change = np.r_[ts_change, samples.shape[-1]]
