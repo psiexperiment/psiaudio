@@ -196,7 +196,8 @@ class PipelineData(np.ndarray):
         return str(self)
 
     def __str__(self):
-        result = f'Pipeline > s0: {self.s0}, fs: {self.fs}, channel: {self.channel}, shape: {self.shape}'
+        result = f'Pipeline > s: {self.s0} to {self.s0+self.n_time}, ' \
+            f'fs: {self.fs}, channel: {self.channel}, shape: {self.shape}'
         return result
 
 
