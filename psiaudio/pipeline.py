@@ -680,15 +680,23 @@ def accumulate(n, axis, newaxis, status_cb, target):
 
 @coroutine
 def downsample(q, target):
-    y_remainder = np.array([])
+    y_remainder = None
+
     while True:
-        y = np.r_[y_remainder, (yield)]
-        remainder = len(y) % q
-        if remainder != 0:
-            y, y_remainder = y[:-remainder], y[-remainder:]
+        if y_remainder is None:
+            y = (yield)
         else:
-            y_remainder = np.array([])
-        result = y[::q]
+            y_new = (yield)
+            y = concat((y_remainder, y_new), axis=-1)
+
+        remainder = y.shape[-1] % q
+        if remainder != 0:
+            y_remainder = y[..., -remainder:]
+            y = y[..., :-remainder]
+        else:
+            y_remainder = None
+
+        result = y[..., ::q]
         if len(result):
             target(result)
 
@@ -699,14 +707,18 @@ def decimate(q, target):
     if np.any(np.abs(np.roots(a)) > 1):
         raise ValueError('Unstable filter coefficients')
     zf = signal.lfilter_zi(b, a)
-    y_remainder = np.array([])
+    y_remainder = None
     while True:
-        y = np.r_[y_remainder, (yield)]
-        remainder = len(y) % q
-        if remainder != 0:
-            y, y_remainder = y[:-remainder], y[-remainder:]
+        if y_remainder is None:
+            y = (yield)
         else:
-            y_remainder = np.array([])
+            y = concat((y_remainder, (yield)), axis=-1)
+        remainder = y.shape[-1] % q
+        if remainder != 0:
+            y_remainder = y[..., -remainder:]
+            y = y[..., :-remainder]
+        else:
+            y_remainder = None
         y, zf = signal.lfilter(b, a, y, zi=zf)
         result = y[::q]
         if len(result):
