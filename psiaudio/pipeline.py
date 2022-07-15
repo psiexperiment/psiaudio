@@ -108,6 +108,7 @@ class PipelineData(np.ndarray):
 
     def __getitem__(self, s):
         obj = super().__getitem__(s)
+
         # This will be the case when s is just an integer, not a slice.
         if not hasattr(obj, 'metadata'):
             return obj
@@ -823,11 +824,6 @@ def decimate(q, target):
         else:
             y = concat((y_remainder, (yield)), axis=-1)
         remainder = y.shape[-1] % q
-        if remainder != 0:
-            y_remainder = y[..., -remainder:]
-            y = y[..., :-remainder]
-        else:
-            y_remainder = None
 
         # Create the initial state for the filter (we call it zf since we will
         # just repeatedly use this on each iteration). We can't initialize this
@@ -837,10 +833,18 @@ def decimate(q, target):
             if y.ndim == 2:
                 zf = zf[np.newaxis]
 
-        y, zf = signal.lfilter(b, a, y, zi=zf, axis=-1)
+        y_filt, zf = signal.lfilter(b, a, y, zi=zf, axis=-1)
+        if isinstance(y, PipelineData):
+            y_filt = PipelineData(y_filt, y.fs, y.s0, y.channel, y.metadata)
 
-        result = y[..., ::q]
-        if len(result):
+        if remainder != 0:
+            y_remainder = y_filt[..., -remainder:]
+            y_filt = y_filt[..., :-remainder]
+        else:
+            y_remainder = None
+
+        result = y_filt[..., ::q]
+        if result.shape[-1] > 0:
             target(result)
 
 
