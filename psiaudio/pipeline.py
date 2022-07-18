@@ -5,8 +5,8 @@ from collections import deque
 from copy import copy
 
 import numpy as np
+import pandas as pd
 from scipy import signal
-
 
 ################################################################################
 # PipelineData
@@ -295,6 +295,109 @@ def concat(arrays, axis=-1):
 
     result = np.concatenate(arrays, axis=axis)
     return PipelineData(result, fs=fs, s0=s0, channel=channel, metadata=metadata)
+
+
+################################################################################
+# Events
+################################################################################
+class Events:
+    '''
+    Collection of events occuring over a given span
+    '''
+
+    def __init__(self, events, start, end, fs):
+        '''
+        Parameters
+        ----------
+        events : list of tuples
+            Each tuple must have two elements. The first is the event name and
+            the second is the sample time of the event.
+        start : int
+            Starting sample of the detection range (inclusive)
+        end : int
+            Ending sample of the detection rnage (exclusive)
+        fs : float
+            Sampling rate of data.
+
+        '''
+        self.events = pd.DataFrame(events, columns=['event', 'sample'])
+        self.events['ts'] = self.events['sample'] / fs
+        self.start = start
+        self.end = end
+        self.fs = fs
+
+    def __str__(self):
+        return f'Events (n={len(self.events)} between {self.start} and {self.end}, fs={self.fs})'
+
+    def __repr__(self):
+        return f'<{self}>'
+
+    def get_range_samples(self, start, end):
+        if (start < self.start) or (end > self.end):
+            raise ValueError('Invalid range')
+        m = (self.events['sample'] >= start) & (self.events['sample'] < end)
+        return Events(self.events[m], start, end, self.fs)
+
+    def get_range(self, lb, ub):
+        '''
+        Return a new `Events` instance containing the subset of events occuring
+        within the given range (in seconds).
+
+        Parameters
+        ----------
+        lb : float
+            Starting time of range
+        ub : float
+            Ending time time of range (exclusive)
+        '''
+        start = int(np.round(lb * self.fs))
+        end = int(np.round(ub * self.fs))
+        return self.get_range_samples(start, end)
+
+    def get_latest(self, lb, ub=0):
+        '''
+        Return a new `Events` instance containing the subset of events occuring
+        within the given range (in seconds). Here, `lb` and `ub` are specified
+        relative to the ending time of the block and should be negative.
+
+        Parameters
+        ----------
+        lb : float
+            Starting time of range
+        ub : float
+            Ending time time of range (exclusive)
+        '''
+        lb = lb + self.end / self.fs
+        ub = ub + self.end / self.fs
+        return self.get_range(lb, ub)
+
+    @property
+    def range_samples(self):
+        return self.end - self.start
+
+    @property
+    def t0(self):
+        return self.start / self.fs
+
+    def rate(self):
+        return len(self.events) / self.range_samples * self.fs
+
+
+def combine_events(events):
+    s0 = events[0].end
+    for ed in events[1:]:
+        if ed.start != s0:
+            raise ValueError(f'Times of each Events collection are not aligned (expected {s0}, found {ed.start})')
+        s0 = ed.end
+        if ed.fs != events[0].fs:
+            raise ValueError('Cannot concatenate Events with different sampling rates')
+
+    return Events(
+        pd.concat(ed.events for ed in events),
+        events[0].start,
+        events[-1].end,
+        events[0].fs
+    )
 
 
 ################################################################################
