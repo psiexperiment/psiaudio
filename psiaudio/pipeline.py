@@ -132,6 +132,8 @@ class PipelineData(np.ndarray):
             # preserved, time, channel, etc.?).
             raise NotImplementedError
             obj.s0 += time_slice
+        elif time_slice is np.newaxis:
+            raise IndexError('Pipeline data cannot be recast this way')
         else:
             if time_slice.start is not None:
                 if time_slice.start > 0:
