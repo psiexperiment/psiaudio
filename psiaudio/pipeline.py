@@ -913,31 +913,78 @@ def delay(n, target):
 
 
 @coroutine
-def edges(initial_state, min_samples, fs, target):
+def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
+    '''
+    Find the rising and falling edges of a binary (boolean) input. The output
+    is an instance of `Events`. Even if no edges are detected, an `Events`
+    instance (containing zero events) is generated. This enables downstream
+    steps to continue updating even if no events are detected.
+
+    Parameters
+    ----------
+    initial_state : {int, bool}
+        Initial state of the system. Required to ensure that we properly detect
+        changes that may occur as soon as the pipeline begins.
+    min_samples : int
+        Minimum number of samples required before a change is registered. This
+        is effectively a means of "debouncing" the signal.
+    fs : {'auto', float}
+        If `'auto'`, this must be part of a pipeline that processes
+        `PipelineData` as fs will be derived from the first `PipelineData`
+        segment.
+    detect : {'both', 'rising', 'falling'}
+        Edge to detect.
+
+    Notes
+    -----
+    Incoming data is cast to boolean dtype. If the data is not already boolean,
+    then the data must have been transformed such that the logical low has a
+    value of 0. All non-zero values will be interpreted as a logical high.
+    '''
     if min_samples < 1:
         raise ValueError('min_samples must be >= 1')
-    prior_samples = np.tile(initial_state, min_samples)
+    prior_samples = np.tile(initial_state, min_samples).astype('bool')
     t_prior = -min_samples
     while True:
         # Wait for new data to become available
         # TODO: How to handle n-dimensional data
-        new_samples = (yield)[0]
+        new_samples = (yield).astype('bool')
+        if fs == 'auto':
+            fs = new_samples.fs
+
+        if new_samples.ndim == 1:
+            pass
+        elif (new_samples.ndim == 2) and (new_samples.shape[0] == 1):
+            new_samples = new_samples[0]
+        else:
+            raise ValueError('Cannot handle N-dimensional data')
 
         samples = np.r_[prior_samples, new_samples]
-        ts_change = np.flatnonzero(np.diff(samples, axis=-1)) + 1
-        ts_change = np.r_[ts_change, samples.shape[-1]]
+        change = np.diff(samples, axis=-1)
+        if detect == 'both':
+            ts_change = np.flatnonzero(change) + 1
+        elif detect == 'rising':
+            ts_change = np.flatnonzero(change == 1) + 1
+        elif detect == 'falling':
+            ts_change = np.flatnonzero(change == -1) + 1
+
+        # Because we discard any two events occuring within `min_samples` of
+        # each other, the final event will get discarded unless we add the
+        # highest timestamp that *could* occur (i.e., samples.shape[-1]). Any
+        # event occuring within min_samples of samples.shape[-1] will end up
+        # getting processed on the next iteration.
+        n_samples = samples.shape[-1]
+        ts_change = np.r_[ts_change, n_samples]
 
         events = []
         for tlb, tub in zip(ts_change[:-1], ts_change[1:]):
             if (tub - tlb) >= min_samples:
-                if initial_state == samples[tlb]:
-                    continue
                 edge = 'rising' if samples[tlb] == 1 else 'falling'
-                initial_state = samples[tlb]
-                ts = t_prior + tlb
-                events.append((edge, ts / fs))
-        if events:
-            target(events)
+                events.append((edge, t_prior + tlb))
+
+        events = Events(events, t_prior + min_samples, t_prior + n_samples,
+                           fs)
+        target(events)
         t_prior += new_samples.shape[-1]
         prior_samples = samples[..., -min_samples:]
 
