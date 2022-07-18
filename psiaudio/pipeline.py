@@ -65,6 +65,10 @@ def normalize_index(index, ndim):
 class PipelineData(np.ndarray):
 
     @property
+    def t(self):
+        return np.arange(self.s0, self.s0 + self.n_time) / self.fs
+
+    @property
     def n_time(self):
         return self.shape[-1]
 
