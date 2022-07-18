@@ -116,6 +116,15 @@ def test_pipeline_data_construct():
     assert d.metadata == [{}, {}, {}]
 
 
+def test_pipeline_data_astype():
+    data = np.random.uniform(size=(2, 400))
+    data_th = (data > 0.5).astype('int')
+    pd = pipeline.PipelineData(data, channel=['A', 'B'], fs=1e3)
+    pd_th = pipeline.PipelineData(data_th, channel=['A', 'B'], fs=1e3)
+    assert_pipeline_data_equal((pd > 0.5).astype('int'), pd_th)
+    assert_pipeline_data_equal((pd > 0.5), pd_th.astype('bool'))
+
+
 def test_pipeline_data_1d(data1d):
     fs = data1d.fs
     md = data1d.metadata.copy()
@@ -258,6 +267,7 @@ def test_pipeline_data_2d(data1d, data2d):
     assert_pipeline_data_equal(data2d[..., n-10:], data2d[..., -10:])
 
     assert data2d[..., 10:][..., -10:].s0 == (n-10)
+
 
 def test_pipeline_data_3d(data1d, data3d):
     assert data3d[[1]].metadata == [data3d.metadata[1]]
