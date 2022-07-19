@@ -1008,6 +1008,98 @@ def average(n, target):
         data = np.concatenate((data, new_data), axis=axis)
 
 
+@pipeline.coroutine
+def auto_th(n, baseline, target, fs='auto'):
+    '''
+    Automatically determine threshold based on input data standard deviation
+
+    Parameters
+    ----------
+    n : int
+        Number of standard deviations to fix threshold at.
+    baseline : float
+        Duration, in seconds, to use for calculating baseline standard
+        deviation.
+    fs : {'auto', float}
+        Sampling rate of data. If `'auto'`, this coroutine must be part of a
+        pipeline that is processing `PipelineData` as `fs` will be derived from
+        the first `PipelineData` segment.
+
+    Once the threshold has been determined, the portion of the input data
+    collected for determining the threshold will then be thresholded and passed
+    to the next stage in the pipeline.
+    '''
+    data = (yield)
+
+    # Now that we have our first chunk of data, calculate some basics.
+    if fs is None:
+        fs = data.fs
+    baseline_samples = int(np.round(baseline * fs))
+
+    # Accumulate data until we have spooled enough to do our baseline estimate.
+    # All downstream pipeline steps will appear to be unresponsive until this
+    # step completes.
+    while data.shape[-1] < baseline_samples:
+        data = pipeline.concat((data, (yield)), axis=-1)
+
+    d = data[..., :baseline_samples].view(np.ndarray)
+    th = np.std(d) * n
+
+    # Immediately send the data accumulated for the baseline (plus any extra
+    # data that was captured), then wait for the next chunk of data.
+    while True:
+        target(data >= th)
+        data = (yield)
+
+
+################################################################################
+# Events data
+################################################################################
+@pipeline.coroutine
+def event_rate(block_size, block_step, target):
+    '''
+    Calculate the rate at which events occur using a sliding temporal window.
+
+    Parameters
+    ----------
+    block_size : float
+        Size of window, in seconds, to calculate event rate over.
+    block_step : float
+        Increment, in seconds, to advance window before calculating next event
+        rate.
+
+    This coroutine must be part of a pipeline in which the previous stage
+    outputs an `Events` instance. As `Events` instances are acquired, they are
+    merged and then split into discrete blocks of `block_size`. The starting
+    time of each block is advanced by `block_step`. If `block_step` is less
+    than `block_size`, then the blocks will overlap. This allows us to
+    effectively apply a sliding window approach to calculating event rate over
+    time.
+    '''
+    events = (yield)
+    s_block_size = int(round(events.fs * block_size))
+    s_block_step = int(round(events.fs * block_step))
+    fs = 1 / s_block_step * events.fs
+    s0 = 0
+    while True:
+        events = pipeline.combine_events((events, (yield)))
+        blocks = []
+        while events.range_samples > s_block_size:
+            block = events.get_range_samples(
+                events.start,
+                events.start + s_block_size
+            )
+            blocks.append(block)
+            events = events.get_range_samples(
+                events.start + s_block_step,
+                events.end
+            )
+        rate = [b.rate() for b in blocks]
+        data = pipeline.PipelineData(rate, s0=s0, fs=fs)
+        target(data)
+        s0 += len(rate)
+
+
 ################################################################################
 # Multichannel continuous data
 ################################################################################
