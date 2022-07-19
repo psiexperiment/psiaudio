@@ -561,7 +561,7 @@ class ShapedNoiseFactory(Carrier):
     '''
     Factory for generating continuous shaped noise using FIR filters.
     '''
-    def __init__(self, fs, level, gains, ntaps=10001, window='hanning',
+    def __init__(self, fs, level, gains, ntaps=1001, window='hanning',
                  polarity=1, seed=None, calibration=None):
         vars(self).update(locals())
 
