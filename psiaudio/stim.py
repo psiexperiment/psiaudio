@@ -744,7 +744,12 @@ def repeat(waveform, fs, n, skip_n, rate, delay=0):
     s_delay = int(round(fs * delay))
 
     if s_waveform > (s_period - s_delay):
-        raise ValueError('Waveform too long to repeat')
+        t_waveform = s_waveform / fs
+        t_period = s_period / fs
+        t_delay = s_delay / fs
+        raise ValueError('Waveform too long to repeat. '
+                         f'Waveform is {t_waveform} s long starting at a delay '
+                         f'of {t_delay}. Total repeat period is {t_period}.')
 
     result = np.zeros((n + skip_n, s_period))
     result[skip_n:, s_delay:s_delay+s_waveform] = waveform
