@@ -816,22 +816,18 @@ def decimate(q, target):
     b, a = signal.cheby1(4, 0.05, 0.8 / q)
     if np.any(np.abs(np.roots(a)) > 1):
         raise ValueError('Unstable filter coefficients')
-    zf = None
-    y_remainder = None
-    while True:
-        if y_remainder is None:
-            y = (yield)
-        else:
-            y = concat((y_remainder, (yield)), axis=-1)
-        remainder = y.shape[-1] % q
 
-        # Create the initial state for the filter (we call it zf since we will
-        # just repeatedly use this on each iteration). We can't initialize this
-        # sooner since we need to verify dimensionality of input during creation.
-        if zf is None:
-            zf = signal.lfilter_zi(b, a)
-            if y.ndim == 2:
-                zf = zf[np.newaxis]
+    y = (yield)
+    s0 = getattr(y, 's0', 0)
+
+    # Create the initial state for the filter (we call it zf since we will just
+    # repeatedly use this on each iteration).
+    zf = signal.lfilter_zi(b, a)
+    if y.ndim == 2:
+        zf = zf[np.newaxis]
+
+    while True:
+        remainder = y.shape[-1] % q
 
         y_filt, zf = signal.lfilter(b, a, y, zi=zf, axis=-1)
         if isinstance(y, PipelineData):
@@ -844,8 +840,17 @@ def decimate(q, target):
             y_remainder = None
 
         result = y_filt[..., ::q]
+        if isinstance(result, PipelineData):
+            result.s0 = s0
+        s0 += result.shape[-1]
+
         if result.shape[-1] > 0:
             target(result)
+
+        if y_remainder is not None:
+            y = concat((y_remainder, (yield)), axis=-1)
+        else:
+            y = (yield)
 
 
 @coroutine
