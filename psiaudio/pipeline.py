@@ -1069,17 +1069,17 @@ def auto_th(n, baseline, target, fs='auto', discard=0):
 ################################################################################
 # Events data
 ################################################################################
-@pipeline.coroutine
+@coroutine
 def event_rate(block_size, block_step, target):
     '''
     Calculate the rate at which events occur using a sliding temporal window.
 
     Parameters
     ----------
-    block_size : float
-        Size of window, in seconds, to calculate event rate over.
+    block_size : int
+        Size of window, in samples, to calculate event rate over.
     block_step : float
-        Increment, in seconds, to advance window before calculating next event
+        Increment, in samples, to advance window before calculating next event
         rate.
 
     This coroutine must be part of a pipeline in which the previous stage
@@ -1091,27 +1091,30 @@ def event_rate(block_size, block_step, target):
     time.
     '''
     events = (yield)
-    s_block_size = int(round(events.fs * block_size))
-    s_block_step = int(round(events.fs * block_step))
-    fs = 1 / s_block_step * events.fs
-    s0 = 0
+    s0 = events.start
+    fs = events.fs / block_step
+
     while True:
-        events = pipeline.combine_events((events, (yield)))
+        events = combine_events((events, (yield)))
         blocks = []
-        while events.range_samples > s_block_size:
+        while events.range_samples > block_size:
             block = events.get_range_samples(
                 events.start,
-                events.start + s_block_size
+                events.start + block_size
             )
             blocks.append(block)
             events = events.get_range_samples(
-                events.start + s_block_step,
+                events.start + block_step,
                 events.end
             )
-        rate = [b.rate() for b in blocks]
-        data = pipeline.PipelineData(rate, s0=s0, fs=fs)
-        target(data)
-        s0 += len(rate)
+        if blocks:
+            rate = [b.rate() for b in blocks]
+
+            # In general, psiepxeriment prefers 2D data (even for singleton
+            # channels), so upcast.
+            data = PipelineData([rate], s0=s0, fs=fs, channel=['heartrate'])
+            target(data)
+            s0 += len(rate)
 
 
 ################################################################################
