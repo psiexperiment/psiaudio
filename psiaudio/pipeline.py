@@ -1019,8 +1019,8 @@ def average(n, target):
         data = np.concatenate((data, new_data), axis=axis)
 
 
-@pipeline.coroutine
-def auto_th(n, baseline, target, fs='auto'):
+@coroutine
+def auto_th(n, baseline, target, fs='auto', discard=0):
     '''
     Automatically determine threshold based on input data standard deviation
 
@@ -1051,10 +1051,13 @@ def auto_th(n, baseline, target, fs='auto'):
     # All downstream pipeline steps will appear to be unresponsive until this
     # step completes.
     while data.shape[-1] < baseline_samples:
-        data = pipeline.concat((data, (yield)), axis=-1)
+        data = concat((data, (yield)), axis=-1)
 
+    # Now, discard the pre-baseline samples.
     d = data[..., :baseline_samples].view(np.ndarray)
+
     th = np.std(d) * n
+    log.debug('auto_th set to %f', th)
 
     # Immediately send the data accumulated for the baseline (plus any extra
     # data that was captured), then wait for the next chunk of data.
