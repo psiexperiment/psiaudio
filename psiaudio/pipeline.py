@@ -855,6 +855,12 @@ def decimate(q, target):
 
 @coroutine
 def discard(discard_samples, cb):
+    '''
+    Discard samples.
+
+    discard_samples : int
+        Number of samples to discard.
+    '''
     to_discard = discard_samples
     while True:
         samples = (yield)
