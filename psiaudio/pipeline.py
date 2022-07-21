@@ -8,6 +8,9 @@ import numpy as np
 import pandas as pd
 from scipy import signal
 
+from . import util
+
+
 ################################################################################
 # PipelineData
 ################################################################################
@@ -306,7 +309,7 @@ class Events:
     Collection of events occuring over a given span
     '''
 
-    def __init__(self, events, start, end, fs):
+    def __init__(self, events, start, end, fs=None):
         '''
         Parameters
         ----------
@@ -318,8 +321,8 @@ class Events:
         end : int
             Ending sample of the detection rnage (exclusive)
         fs : float
-            Sampling rate of data.
-
+            Sampling rate of data. Optional. If not provided, `get_range` and
+            `get_latest` will not work.
         '''
         self.events = pd.DataFrame(events, columns=['event', 'sample'])
         self.events['ts'] = self.events['sample'] / fs
@@ -351,8 +354,15 @@ class Events:
         ub : float
             Ending time time of range (exclusive)
         '''
+        if self.fs is None:
+            raise ValueError('Unknown sampling rate. Use `get_range_samples`.')
         start = int(np.round(lb * self.fs))
         end = int(np.round(ub * self.fs))
+        return self.get_range_samples(start, end)
+
+    def get_latest_samples(self, lb, ub=0):
+        start = lb + self.end
+        end = ub + self.end
         return self.get_range_samples(start, end)
 
     def get_latest(self, lb, ub=0):
@@ -368,9 +378,11 @@ class Events:
         ub : float
             Ending time time of range (exclusive)
         '''
-        lb = lb + self.end / self.fs
-        ub = ub + self.end / self.fs
-        return self.get_range(lb, ub)
+        if self.fs is None:
+            raise ValueError('Unknown sampling rate. Use `get_latest_samples`.')
+        lb = int(np.round(lb * self.fs))
+        ub = int(np.round(ub * self.fs))
+        return self.get_latest_samples(lb, ub)
 
     @property
     def range_samples(self):
@@ -958,15 +970,24 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
     '''
     if min_samples < 1:
         raise ValueError('min_samples must be >= 1')
+
+
+    # Get timestamp of first chunk
+    new_samples = (yield).astype('bool')
     prior_samples = np.tile(initial_state, min_samples).astype('bool')
-    t_prior = -min_samples
+
+    if isinstance(new_samples, PipelineData):
+        prior_samples = PipelineData(prior_samples,
+                                     s0=new_samples.s0-min_samples,
+                                     fs=new_samples.fs)
+        s0 = prior_samples.s0
+        fs = prior_samples.fs
+    else:
+        s0 = -min_samples
+        fs = None
+
     while True:
         # Wait for new data to become available
-        # TODO: How to handle n-dimensional data
-        new_samples = (yield).astype('bool')
-        if fs == 'auto':
-            fs = new_samples.fs
-
         if new_samples.ndim == 1:
             pass
         elif (new_samples.ndim == 2) and (new_samples.shape[0] == 1):
@@ -974,34 +995,24 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
         else:
             raise ValueError('Cannot handle N-dimensional data')
 
-        samples = np.r_[prior_samples, new_samples]
-        change = np.diff(samples, axis=-1)
-        if detect == 'both':
-            ts_change = np.flatnonzero(change) + 1
-        elif detect == 'rising':
-            ts_change = np.flatnonzero(change == 1) + 1
-        elif detect == 'falling':
-            ts_change = np.flatnonzero(change == -1) + 1
-
-        # Because we discard any two events occuring within `min_samples` of
-        # each other, the final event will get discarded unless we add the
-        # highest timestamp that *could* occur (i.e., samples.shape[-1]). Any
-        # event occuring within min_samples of samples.shape[-1] will end up
-        # getting processed on the next iteration.
-        n_samples = samples.shape[-1]
-        ts_change = np.r_[ts_change, n_samples]
+        n_samples = new_samples.shape[-1]
+        samples = concat((prior_samples, new_samples), axis=-1)
+        epochs = util.debounce_epochs(util.epochs(samples), min_samples)
 
         events = []
-        for tlb, tub in zip(ts_change[:-1], ts_change[1:]):
-            if (tub - tlb) >= min_samples:
-                edge = 'rising' if samples[tlb] == 1 else 'falling'
-                events.append((edge, t_prior + tlb))
+        for lb, ub in epochs:
+            if detect in ('rising', 'both') and lb > 0:
+                events.append(('rising', lb + s0))
+            if detect in ('falling', 'both') and ub < samples.shape[-1]:
+                events.append(('falling', ub + s0))
 
-        events = Events(events, t_prior + min_samples, t_prior + n_samples,
-                           fs)
+        events = Events(events, s0, s0 + n_samples, fs)
         target(events)
-        t_prior += new_samples.shape[-1]
+
+        s0 += new_samples.shape[-1]
         prior_samples = samples[..., -min_samples:]
+
+        new_samples = (yield).astype('bool')
 
 
 @coroutine
@@ -1020,7 +1031,7 @@ def average(n, target):
 
 
 @coroutine
-def auto_th(n, baseline, target, fs='auto', discard=0):
+def auto_th(n, baseline, target, fs='auto'):
     '''
     Automatically determine threshold based on input data standard deviation
 
