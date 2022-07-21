@@ -7,6 +7,7 @@ from collections import deque
 from functools import partial
 
 import numpy as np
+import pandas as pd
 from scipy import signal
 
 from psiaudio import pipeline
@@ -21,6 +22,13 @@ def assert_pipeline_data_equal(a, b):
     np.testing.assert_array_equal(a, b)
     assert a.channel == b.channel
     assert a.metadata == b.metadata
+
+
+def assert_events_equal(a, b):
+    pd.testing.assert_frame_equal(a.events, b.events)
+    assert a.start == b.start
+    assert a.end == b.end
+    assert a.fs == b.fs
 
 
 def assert_pipeline_data_almost_equal(a, b, *args, **kw):
@@ -599,6 +607,121 @@ def test_reject_epochs(fs, data_fixture, detrend_mode, request):
         # Avoid weird numpy indexing behavior
         expected = expected[[0, 2]][:, [1]]
         assert_pipeline_data_equal(actual, expected)
+
+
+def test_edges():
+    def _test_pipeline(d, expected, debounce=2, initial_state=0,
+                       detect='both'):
+        actual = []
+        pipe = pipeline.edges(min_samples=debounce, target=actual.append,
+                              initial_state=initial_state, detect=detect)
+        for i in range(4):
+            lb = i * 100
+            ub = lb + 100
+            pipe.send(d[..., lb:ub])
+        for a, e in zip(actual, expected):
+            try:
+                assert_events_equal(a, e)
+            except:
+                print(a, e)
+                raise
+
+    # Check what happens when we have no changes over the duration of the
+    # signal (all zeros).
+    d = np.zeros((1, 400))
+    d = pipeline.PipelineData(d, s0=0, fs=1000)
+    expected = [
+        pipeline.Events([], -2, 98, 1000),
+        pipeline.Events([], 98, 198, 1000),
+        pipeline.Events([], 198, 298, 1000),
+        pipeline.Events([], 298, 398, 1000),
+    ]
+    _test_pipeline(d, expected)
+    expected[0] = pipeline.Events([('falling', 0)], -2, 98, 1000)
+    _test_pipeline(d, expected, debounce=2, initial_state=1)
+
+    # Check what happens when we have no changes over the duration of the
+    # signal (all ones).
+    d = np.ones((1, 400))
+    d = pipeline.PipelineData(d, s0=0, fs=1000)
+    expected = [
+        pipeline.Events([('rising', 0)], -2, 98, 1000),
+        pipeline.Events([], 98, 198, 1000),
+        pipeline.Events([], 198, 298, 1000),
+        pipeline.Events([], 298, 398, 1000),
+    ]
+    _test_pipeline(d, expected)
+    expected[0] = pipeline.Events([], -2, 98, 1000)
+    _test_pipeline(d, expected, initial_state=1)
+
+    # Check change in first 10 samples.
+    d = np.zeros((1, 400))
+    d[:, :10] = 1
+    d = pipeline.PipelineData(d, s0=0, fs=1000)
+    expected = [
+        pipeline.Events([('rising', 0), ('falling', 10)], -2, 98, 1000),
+        pipeline.Events([], 98, 198, 1000),
+        pipeline.Events([], 198, 298, 1000),
+        pipeline.Events([], 298, 398, 1000),
+    ]
+    _test_pipeline(d, expected)
+
+    # Now, check proper edge is reported.
+    expected[0] = pipeline.Events([('falling', 10)], -2, 98, 1000)
+    _test_pipeline(d, expected, detect='falling')
+    expected[0] = pipeline.Events([('rising', 0)], -2, 98, 1000)
+    _test_pipeline(d, expected, detect='rising')
+
+    # Check change in 10 samples bracketing a boundary condition.
+    d = np.zeros((1, 400))
+    d[:, 95:105] = 1
+    d = pipeline.PipelineData(d, s0=0, fs=1000)
+    expected = [
+        pipeline.Events([('rising', 95)], -2, 98, 1000),
+        pipeline.Events([('falling', 105)], 98, 198, 1000),
+        pipeline.Events([], 198, 298, 1000),
+        pipeline.Events([], 298, 398, 1000),
+    ]
+    _test_pipeline(d, expected)
+
+    # Check debounce in 10 samples bracketing a boundary condition. Verify what
+    # happens when it brackets a block external to the pipeline.
+    d = np.zeros((1, 400))
+    d[:, 96:105] = 1
+    d = pipeline.PipelineData(d, s0=0, fs=1000)
+    expected = [
+        pipeline.Events([], -10,  90, 1000),
+        pipeline.Events([],  90, 190, 1000),
+        pipeline.Events([], 190, 290, 1000),
+        pipeline.Events([], 290, 390, 1000),
+    ]
+    _test_pipeline(d, expected, debounce=10)
+
+    # Check what happens if it brackets the block internal to the pipeline
+    d = np.zeros((1, 400))
+    d[:, 86:95] = 1
+    d = pipeline.PipelineData(d, s0=0, fs=1000)
+    _test_pipeline(d, expected, debounce=10)
+
+    # Verify debounce correctly ignores both stretches.
+    d = np.zeros((1, 400))
+    d[:, 87:95] = 1
+    d[:, 97:105] = 1
+    d = pipeline.PipelineData(d, s0=0, fs=1000)
+    _test_pipeline(d, expected, debounce=10)
+
+    # Verify debounce correctly ignores both stretches.
+    d = np.zeros((1, 400))
+    d[:, 80:105] = 1
+    d[:, 115:200] = 1
+    expected = [
+        pipeline.Events([('rising', 80)], -10,  90, 1000),
+        pipeline.Events([],  90, 190, 1000),
+        pipeline.Events([('falling', 200)], 190, 290, 1000),
+        pipeline.Events([], 290, 390, 1000),
+    ]
+    d = pipeline.PipelineData(d, s0=0, fs=1000)
+    _test_pipeline(d, expected, debounce=10)
 
 
 # TODO TEST:
