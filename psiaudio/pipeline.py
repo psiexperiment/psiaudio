@@ -882,7 +882,6 @@ def discard(discard_samples, cb):
             cb(samples)
             continue
 
-        samples.metadata['discarded'] = discard_samples
         if to_discard == 0:
             cb(samples)
         elif samples.shape[-1] <= to_discard:
