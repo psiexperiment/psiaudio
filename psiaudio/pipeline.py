@@ -1080,7 +1080,7 @@ def auto_th(n, baseline, target, fs='auto'):
 # Events data
 ################################################################################
 @coroutine
-def event_rate(block_size, block_step, target):
+def event_rate(block_size, block_step, target, s0_mode='center'):
     '''
     Calculate the rate at which events occur using a sliding temporal window.
 
@@ -1091,6 +1091,12 @@ def event_rate(block_size, block_step, target):
     block_step : float
         Increment, in samples, to advance window before calculating next event
         rate.
+    s0_mode : {'center', 'left', 'right'}
+        Controls how the initial s0 of the resulting PipelineData object is
+        determined. If `'center'`, s0 will reflect the center of the block over
+        which the event rate is calculated. If `'left'` or `'right'`, s0 will
+        reflect either the beginning or end of the block, respectively, over
+        which the event rate is calculated.
 
     This coroutine must be part of a pipeline in which the previous stage
     outputs an `Events` instance. As `Events` instances are acquired, they are
@@ -1101,7 +1107,7 @@ def event_rate(block_size, block_step, target):
     time.
     '''
     events = (yield)
-    s0 = events.start
+    s0 = events.start + block_size * 0.5
     fs = events.fs / block_step
 
     while True:
@@ -1122,7 +1128,7 @@ def event_rate(block_size, block_step, target):
 
             # In general, psiepxeriment prefers 2D data (even for singleton
             # channels), so upcast.
-            data = PipelineData([rate], s0=s0, fs=fs, channel=['heartrate'])
+            data = PipelineData([rate], s0=s0, fs=fs)
             target(data)
             s0 += len(rate)
 
