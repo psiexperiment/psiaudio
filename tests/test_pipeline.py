@@ -610,6 +610,11 @@ def test_reject_epochs(fs, data_fixture, detrend_mode, request):
 
 
 def test_edges():
+    # Supporting function to handle segmenting PipelineData into 10 chunks and
+    # then feeding each chunk into the pipeline (useful for verifying that we
+    # are properly addressing what we might expect to see in a full experiment
+    # pipeline where data is incrementially obtained from the acquisitoin
+    # process).
     def _test_pipeline(d, expected, debounce=2, initial_state=0,
                        detect='both'):
         actual = []
@@ -710,7 +715,8 @@ def test_edges():
     d = pipeline.PipelineData(d, s0=0, fs=1000)
     _test_pipeline(d, expected, debounce=10)
 
-    # Verify debounce correctly ignores both stretches.
+    # Verify edge detection correctly handles rising/falling edges of TTL that
+    # lasts over multiple segments.
     d = np.zeros((1, 400))
     d[:, 80:105] = 1
     d[:, 115:200] = 1
@@ -723,6 +729,64 @@ def test_edges():
     d = pipeline.PipelineData(d, s0=0, fs=1000)
     _test_pipeline(d, expected, debounce=10)
 
+    # Verify that if the initial chunk does nto have a s0 of 0, it will
+    # properly report the *times* of the segments.
+    expected = [
+        pipeline.Events([('rising', 87)], -3,  97, 1000),
+        pipeline.Events([],  97, 197, 1000),
+        pipeline.Events([('falling', 207)], 197, 297, 1000),
+        pipeline.Events([], 297, 397, 1000),
+    ]
+    d = pipeline.PipelineData(d, s0=7, fs=1000)
+    _test_pipeline(d, expected, debounce=10)
+
+
+def test_event_rate():
+    events = [
+        pipeline.Events(
+            [
+                ('rising', 10),
+                ('rising', 30),
+                ('rising', 80),
+            ], 0, 100, 1000
+        ),
+        pipeline.Events(
+            [
+                ('rising', 190),
+            ], 100, 200, 1000
+        ),
+        pipeline.Events(
+            [
+            ], 200, 300, 1000
+        ),
+        pipeline.Events(
+            [
+                ('rising', 310),
+                ('rising', 330),
+                ('rising', 380),
+            ], 300, 400, 1000
+        ),
+    ]
+    rate = []
+    pipe = pipeline.event_rate(block_size=50, block_step=25,
+                               target=rate.append)
+    for event in events:
+        pipe.send(event)
+    expected = pipeline.PipelineData(
+        [[40, 20, 20, 20, 0, 0, 20, 20, 0, 0, 0, 20, 40, 20]],
+        s0=12.5, fs=4)
+    assert_pipeline_data_equal(pipeline.concat(rate), expected)
+
+
+@pytest.mark.parametrize('data_fixture', ['data1d', 'data2d'])
+def test_discard(fs, data_fixture, detrend_mode, request):
+    data = request.getfixturevalue(data_fixture)
+
+    def cb(target):
+        return pipeline.discard(15, target)
+
+    actual = pipeline.concat(feed_pipeline(cb, data), axis=-1)
+    assert_pipeline_data_equal(actual, data[..., 15:])
 
 # TODO TEST:
 # * mc_select
