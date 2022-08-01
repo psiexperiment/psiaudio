@@ -288,7 +288,7 @@ def concat(arrays, axis=-1):
         metadata = base_arr.metadata
         for a in arrays[1:]:
             if a.metadata != metadata:
-                raise ValueError('Cannot concatenate inputs with different metadata')
+                raise ValueError(f'Cannot concatenate inputs with different metadata. Expected {metadata}. Found {a.metadata}.')
     else:
         metadata = []
         for a in arrays:
@@ -1067,7 +1067,7 @@ def auto_th(n, baseline, target, fs='auto'):
     d = data[..., :baseline_samples].view(np.ndarray)
 
     th = np.std(d) * n
-    log.debug('auto_th set to %f', th)
+    log.info('auto_th set to %f', th)
 
     # Immediately send the data accumulated for the baseline (plus any extra
     # data that was captured), then wait for the next chunk of data.
