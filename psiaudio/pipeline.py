@@ -772,7 +772,8 @@ def extract_epochs(fs, queue, epoch_size, target, buffer_size=0,
                 break
 
         if not (queue or epoch_coroutines) and empty_queue_cb:
-            # If queue and epoch coroutines are complete, call queue callback.
+            # If queue and epoch coroutines are complete, call queue callback
+            # once and only once.
             empty_queue_cb()
             empty_queue_cb = None
 
