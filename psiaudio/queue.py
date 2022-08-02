@@ -361,7 +361,7 @@ class AbstractSignalQueue:
         delay = next(data['delays'])
         self._delay_samples = int(round(delay*self._fs))
         if self._delay_samples < 0:
-            raise ValueError(f'Invalid option for delay. Got {delay}.')
+            raise ValueError(f'Invalid value for ITI interval. Got {delay}.')
 
         t0 = self._t0 + (self._samples/self._fs)
         info = {
