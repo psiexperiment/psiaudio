@@ -909,7 +909,7 @@ def int_to_TTL(a, width):
     >>> int_to_TTL([4, 8, 5], width=6).T
     array([[False, False,  True, False, False, False],
            [False, False, False,  True, False, False],
-           [ True, False,  True, False, False, False]], dtype=bool)
+           [ True, False,  True, False, False, False]])
     '''
     a = np.array(a)
     bitarray = [(a>>bit) & 1 for bit in range(width)]
