@@ -598,6 +598,13 @@ def octave_space(lb, ub, step, mode='nearest'):
     return 2.0**x
 
 
+ordering_error_message = '''Unable to interleave {frequencies} so that adjacent
+frequencies are spaced at least {octaves:.1f} octaves apart. This can often be
+fixed by increasing the range of frequencies tested. For example, if you are
+assessing frequencies spaced 0.5 octaves, you need at least four frequencies to
+be able order them so that adjacent frequencies are at least 1.0 octaves apart.
+'''
+
 def interleave_octaves(freqs, min_octaves=1):
     '''
     Return correct ordering for frequencies in interleaved paradigm as per.
@@ -614,10 +621,15 @@ def interleave_octaves(freqs, min_octaves=1):
     raised. In this example, the first and last frequences are within one
     octave.
 
-    >>> interleave_octaves([2000, 2800, 4000])
+    >>> interleave_octaves([2000, 2800, 4000]) # doctest: +NORMALIZE_WHITESPACE
     Traceback (most recent call last):
       ...
-    ValueError: Unable to interleave 4000, 2000, 2800 appropriately.
+    ValueError: Unable to interleave 4000, 2000, 2800 so that adjacent
+    frequencies are spaced at least 1.0 octaves apart. This can often be fixed
+    by increasing the range of frequencies tested. For example, if you are
+    assessing frequencies spaced 0.5 octaves, you need at least four
+    frequencies to be able order them so that adjacent frequencies are at least
+    1.0 octaves apart.
 
     You can use a different octave spacing.
 
@@ -635,7 +647,8 @@ def interleave_octaves(freqs, min_octaves=1):
         ordered.extend(freqs[i::n_groups])
     if not check_interleaved_octaves(ordered, min_octaves):
         ordered = ', '.join(str(f) for f in ordered)
-        m = f'Unable to interleave {ordered} appropriately.'
+        m = ordering_error_message.format(frequencies=ordered,
+                                          octaves=min_octaves)
         raise ValueError(m)
     return ordered
 
