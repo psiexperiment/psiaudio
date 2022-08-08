@@ -1204,10 +1204,14 @@ class WavSequenceFactory(ContinuousWaveform):
 
     def reset(self):
         self.queue = queue.BlockedRandomSignalQueue(self.fs)
-        self.queue.extend(self.wav_files, np.inf, duration=self.duration)
+        metadata = [{'filename': fh.filename.name} for fh in self.wav_files]
+        self.queue.extend(self.wav_files, np.inf, duration=self.duration, metadata=metadata)
 
     def next(self, samples):
         return self.queue.pop_buffer(samples)
+
+    def connect(self, *args, **kwargs):
+        return self.queue.connect(*args, **kwargs)
 
 
 def wavs_from_path(fs, path, *args, **kwargs):
