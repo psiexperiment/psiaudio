@@ -1,7 +1,6 @@
 import logging
 
-
-__version__ = '2021.12.14.dev0'
+from .version import __version__
 
 
 def add_logging_level(name, level):
