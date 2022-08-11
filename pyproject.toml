@@ -1,3 +1,36 @@
+[project]
+name = "psiaudio"
+description = "Audio tools supporting psiexperiment"
+requires-python = ">=3.6"
+license = {file = "license.txt"}
+authors = [
+    {name = "Brad Buran", email="bburan@alum.mit.edu"},
+    {name = "Buran Consulting, LLC", email="info@bradburan.com"}
+]
+maintainers = [
+    {name = "Brad Buran", email="bburan@alum.mit.edu"},
+    {name = "Buran Consulting, LLC", email="info@bradburan.com"}
+]
+dependencies = [
+	"numpy",
+	"scipy",
+	"pandas",
+	"matplotlib",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+examples = ["sounddevice"]
+docs = ["sphinx", "sphinx_gallery", "sphinx_rtd_theme", "pygments-enaml", "sounddevice"]
+test = ["pytest", "pytest-benchmark", "pytest-xdist"]
+
+[build-system]
+requires = ["setuptools>=61.2", "wheel", "setuptools_scm[toml]>=3.4.3"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "psiaudio/version.py"
+
 [tool.pytest.ini_options]
 markers = [
     "slow: runs tests that will otherwise be skipped because they are slow"
