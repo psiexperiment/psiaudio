@@ -120,6 +120,7 @@ def phase(s, fs, window=None, waveform_averages=None, unwrap=True):
 
 
 def psd(s, fs, window=None, waveform_averages=None, trim_samples=True):
+    s = np.asarray(s)
     if waveform_averages is None:
         waveform_averages = 1
     if trim_samples:

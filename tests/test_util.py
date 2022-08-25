@@ -1,6 +1,7 @@
 import pytest
 
 import numpy as np
+import pandas as pd
 
 from psiaudio import util
 from psiaudio.calibration import CalibrationNFError, CalibrationTHDError
@@ -267,3 +268,24 @@ def test_rms_rfft(spectrum_level, noise_band):
     assert expected_level == pytest.approx(actual_level, 2)
 
 
+def test_psd_df():
+    fs = 10e3
+    tones = np.vstack((make_tone(fs, 1e3, 1), make_tone(fs, 2e3, 1)))
+    psd = util.psd_df(tones, fs=fs)
+    assert psd.columns.name == 'frequency'
+    assert psd.index.values.tolist() == [0, 1]
+
+    actual = psd[[1e3, 2e3]].values
+    expected = np.array([[np.sqrt(2)/2, 0], [0, np.sqrt(2)/2]])
+    np.testing.assert_array_almost_equal(actual, expected)
+
+    t = np.arange(tones.shape[-1]) / fs
+    columns = pd.Index(t, name='time')
+    index = pd.MultiIndex.from_tuples([('A', '1kHz'), ('B', '2kHz')],
+                                      names=['category', 'frequency'])
+    tones = pd.DataFrame(tones, index=index, columns=columns)
+    psd = util.psd_df(tones, fs=fs)
+    assert psd.index.equals(tones.index)
+    assert psd.columns.name == 'frequency'
+    actual = psd[[1e3, 2e3]].values
+    np.testing.assert_array_almost_equal(actual, expected)
