@@ -549,6 +549,10 @@ def capture_epoch(epoch_s0, epoch_samples, info, target, fs=None,
     # loop.
     accumulated_data = []
     current_s0 = epoch_s0
+
+    # Info may be shared among multiple pipeline components. Make a copy so
+    # that we don't accidentally affect other pipeline components.
+    info = info.copy()
     md = info.pop('metadata', {})
 
     while True:
