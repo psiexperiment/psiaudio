@@ -148,6 +148,30 @@ def csd_df(s, fs, *args, **kw):
 
 
 def psd_df(s, fs, *args, waveform_averages=None, **kw):
+    '''
+    Compute PSD and return as a dataframe with columns indexed by frequency
+
+    Parameters
+    ----------
+    s : {array, DataFrame}
+        Data to compute PSD over. The last axis (columns for DataFrame) is
+        always assumed to be time. If array, only 2D arrays are supported (for
+        conversion into DataFrame).
+    fs : float
+        Sampling rate of data.
+    waveform_averages : {None, int}
+        Number of chunks to segment time data into before computing PSD.
+        Averaging is done after computing the PSD.
+
+    Additional arguments are passed to :func:`~psiaudio.util.psd`.
+
+    Returns
+    -------
+    psd : pd.DataFrame
+        DataFrame with frequency as columns. If ``s`` was a DataFrame, the
+        original index of ``s`` will be preserved. If ``s`` was an array, psd
+        will have a simple integer index.
+    '''
     p = psd(s, fs, *args, waveform_averages=waveform_averages, **kw)
     n = s.shape[-1]
     if waveform_averages is not None:
