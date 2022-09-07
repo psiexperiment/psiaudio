@@ -1198,10 +1198,37 @@ def events_to_info(trigger_edge, base_info, target):
 
 @coroutine
 def reject_epochs(reject_threshold, mode, status_cb, valid_target):
+    '''
+    Discard epochs containing artifacts
+
+    Parameters
+    ----------
+    reject_threshold : {float, callable}
+        If callble, this will be called each time this coroutine is invoked
+        allowing threshold to be updated during long-running experiments.
+    mode : {'absolute value', 'amplitude'}
+        Specifies reject method:
+        * 'absolute value': rejected if max(abs(signal)) > reject_threshold
+        * 'amplitude': rejected if (max(s) - min(s)) > reject_threshold
+    status_cb : {None, callable}
+        If provided, must be a callback that takes two arguments, the number of
+        epochs reviewed and the number of epochs rejected on that particular
+        invocation of the callback.
+    valid_target : {coroutine, callable}
+        Target to send accepted (i.e., not rejected) epochs to.
+    '''
     if mode == 'absolute value':
-        accept = lambda s: np.max(np.abs(s), axis=-1) < reject_threshold
+        accept = lambda s, th: np.max(np.abs(s), axis=-1) < th
     elif mode == 'amplitude':
-        accept = lambda s: np.ptp(s, axis=-1) < reject_threshold
+        accept = lambda s, th: np.ptp(s, axis=-1) < th
+
+    # This reduces the likelihood of name collisions (i.e., if the calling code
+    # provides a lambda that uses a variable name, it's very unlikely to be
+    # __th_cb__).
+    if not callable(reject_threshold):
+        __th_cb__ = lambda: reject_threshold
+    else:
+        __th_cb__ = reject_threshold
 
     while True:
         data = (yield)
@@ -1217,7 +1244,7 @@ def reject_epochs(reject_threshold, mode, status_cb, valid_target):
                 raise ValueError('Only one channel supported')
 
         # Check for valid epochs and send them if there are any
-        mask = accept(np.asarray(data))[:, 0]
+        mask = accept(np.asarray(data), __th_cb__())[:, 0]
         valid_data = data[mask]
         n = len(data)
         n_accept = len(valid_data)
