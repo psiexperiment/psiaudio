@@ -595,6 +595,7 @@ def test_reject_epochs(fs, data_fixture, detrend_mode, request):
     if data_fixture == 'data1d':
         data[s0] = 3
         queue, expected, epoch_size = queue_epochs(data)
+        expected.add_metadata('reject_threshold', 2)
         actual = pipeline.concat(feed_pipeline(cb, data), axis=-3)
         assert_pipeline_data_equal(actual, expected[[0, 2]])
     elif data_fixture == 'data2d':
@@ -606,6 +607,7 @@ def test_reject_epochs(fs, data_fixture, detrend_mode, request):
         actual = pipeline.concat(feed_pipeline(cb, data[1]), axis=-3)
         # Avoid weird numpy indexing behavior
         expected = expected[[0, 2]][:, [1]]
+        expected.add_metadata('reject_threshold', 2)
         assert_pipeline_data_equal(actual, expected)
 
 
@@ -656,8 +658,10 @@ def test_reject_epochs_update_th(fs, data_fixture, detrend_mode, request):
     # we added the artifacts) so that the resulting epoch waveforms are
     # identical to the ones used for the artifact reject.
     _, expected, _ = queue_epochs(data)
+    expected = expected[[1]]
+    expected.add_metadata('reject_threshold', 4)
     actual = pipeline.concat(actual, axis=-3)
-    assert_pipeline_data_equal(actual, expected[[1]])
+    assert_pipeline_data_equal(actual, expected)
 
 
 def test_edges():

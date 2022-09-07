@@ -210,6 +210,12 @@ class PipelineData(np.ndarray):
             f'fs: {self.fs}, channel: {self.channel}, shape: {self.shape}'
         return result
 
+    def add_metadata(self, key, value):
+        if self.ndim > 2:
+            for md in self.metadata:
+                md[key] = value
+        else:
+            self.metadata[key] = value
 
 def ensure_dim(arrays, dim):
     ndim = arrays[0].ndim
@@ -1244,8 +1250,10 @@ def reject_epochs(reject_threshold, mode, status_cb, valid_target):
                 raise ValueError('Only one channel supported')
 
         # Check for valid epochs and send them if there are any
-        mask = accept(np.asarray(data), __th_cb__())[:, 0]
+        th = __th_cb__()
+        mask = accept(np.asarray(data), th)[:, 0]
         valid_data = data[mask]
+        valid_data.add_metadata('reject_threshold', th)
         n = len(data)
         n_accept = len(valid_data)
 
