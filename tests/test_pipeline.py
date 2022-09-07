@@ -609,6 +609,57 @@ def test_reject_epochs(fs, data_fixture, detrend_mode, request):
         assert_pipeline_data_equal(actual, expected)
 
 
+@pytest.mark.parametrize('data_fixture', ['data1d'])
+def test_reject_epochs_update_th(fs, data_fixture, detrend_mode, request):
+    data = request.getfixturevalue(data_fixture)
+
+    # Lambda functions will pull the value reject_threshold from the namespace.
+    th_cb = lambda: th
+
+    def cb(target):
+        nonlocal data
+        nonlocal queue
+        nonlocal epoch_size
+
+        return \
+            pipeline.extract_epochs(
+                fs=data.fs,
+                queue=queue,
+                epoch_size=epoch_size,
+                target=pipeline.reject_epochs(
+                    th_cb,
+                    'amplitude',
+                    None,
+                    target
+                ).send
+            )
+
+    queue, expected, epoch_size = queue_epochs(data)
+
+    segments = []
+    actual = []
+    cr = cb(target=actual.append)
+    o = 0
+
+    thresholds = [2, 4, 2]
+    for e, th in zip(expected, thresholds):
+        # Now, add an artifact value of 3 to each.
+        s0 = int(round(e.metadata['t0'] * e.fs))
+        e0 = s0 + e.n_time
+        i = np.random.randint(s0, e0)
+        data[i] = 3
+        cr.send(data[o:e0])
+        o = e0
+    cr.send(data[o:])
+
+    # We need to re-run the standard epoch queue using the mutated data (where
+    # we added the artifacts) so that the resulting epoch waveforms are
+    # identical to the ones used for the artifact reject.
+    _, expected, _ = queue_epochs(data)
+    actual = pipeline.concat(actual, axis=-3)
+    assert_pipeline_data_equal(actual, expected[[1]])
+
+
 def test_edges():
     # Supporting function to handle segmenting PipelineData into 10 chunks and
     # then feeding each chunk into the pipeline (useful for verifying that we
