@@ -845,7 +845,8 @@ class ToneFactory(Carrier):
 # SAMTone
 ################################################################################
 def sam_tone(fs, fc, fm, level, depth=1, phase=0, polarity=1, calibration=None,
-             samples='auto', offset=0, duration=None, eq_power=True):
+             samples='auto', offset=0, duration=None, eq_power=True,
+             equalize=True):
     '''
     Generates a SAM tone
 
@@ -856,10 +857,28 @@ def sam_tone(fs, fc, fm, level, depth=1, phase=0, polarity=1, calibration=None,
 
     Parameters
     ----------
+    eq_power : bool
+        If True, compensate for modualtion depth so the overall RMS is the same
+        when varying modulation depth.  This is useful when doing AM detection
+        studies as it minimizes loudness cues.
+    equalize : bool
+        If True and the calibration is provided, ensure that the sidebands
+        (fc-fm, fc+fm) are adjusted to reflect the actual output of the speaker
+        at those frequencies. If not provided, the calibration at the carrier
+        frequency is used for both the carrier and modulation sidebands.
+
     # TODO
     '''
     frequencies = fc + fm * np.arange(-1, 2)
-    sf = level if calibration is None else calibration.get_sf(frequencies, level)
+
+    if calibration is not None:
+        if equalize:
+            sf = calibration.get_sf(frequencies, level)
+        else:
+            sf = calibration.get_sf(fc, level)
+    else:
+        sf = level
+
     sf = sf * np.array([0.25, 0.5, 0.25])
     if eq_power:
         sf /= sam_eq_power(depth)
@@ -882,7 +901,7 @@ def sam_tone(fs, fc, fm, level, depth=1, phase=0, polarity=1, calibration=None,
 class SAMToneFactory(Carrier):
 
     def __init__(self, fs, fc, fm, level, depth=1, phase=0, polarity=1,
-                 eq_power=True, calibration=None):
+                 eq_power=True, equalize=True, calibration=None):
         vars(self).update(locals())
         self.reset()
 
@@ -895,8 +914,8 @@ class SAMToneFactory(Carrier):
         waveform = sam_tone(
             fs=self.fs, fc=self.fc, fm=self.fm, level=self.level,
             depth=self.depth, phase=self.phase, polarity=self.polarity,
-            eq_power=self.eq_power, calibration=self.calibration,
-            offset=self.offset, samples=samples
+            eq_power=self.eq_power, equalize=self.equalize,
+            calibration=self.calibration, offset=self.offset, samples=samples
         )
         self.offset += samples
         return waveform
