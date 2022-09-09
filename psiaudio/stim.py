@@ -466,7 +466,10 @@ def _calculate_bandlimited_noise_iir(fs, calibration, fl, fh):
 
 class BandlimitedNoiseFactory(Carrier):
     '''
-    Factory for generating continuous bandlimited noise
+    Factory for generating continuous bandlimited noise using IIR filters.
+    Equalization requires a calibration that was generated using Golay.
+
+    See BandlimitedFIRNoiseFactory as an alternative.
     '''
     def __init__(self, fs, seed, level, fl, fh, filter_rolloff,
                  passband_attenuation, stopband_attenuation, equalize=False,
@@ -542,6 +545,176 @@ def bandlimited_noise(fs, level, fl, fh, duration, filter_rolloff=1,
     args = locals()
     args.pop('duration')
     factory = BandlimitedNoiseFactory(**args)
+    samples = int(round(duration * fs))
+    return factory.next(samples)
+
+
+################################################################################
+# Bandlimited FIR noise factory
+################################################################################
+class BandlimitedFIRNoiseFactory(Carrier):
+    '''
+    Factory for generating continuous shaped noise using FIR filters.
+
+    This is similar to shaped noise, but with simpler inputs if all you want is
+    bandlimited noise (i.e., no requirement to generate the dictionary of
+    gains).
+    '''
+    def __init__(self, fs, fl, fh, level, ntaps=1001, window='hanning',
+                 polarity=1, seed=None, equalize=True, calibration=None):
+        vars(self).update(locals())
+
+        #TODO: Implement eq logic.
+
+        if calibration is None:
+            raise NotImplemented('Not implemented for uncalibrated noise')
+
+        # Calculate the gains for the shaped noise
+        freq = np.arange(fl, fh + 1)
+        #spectrum_level = util.band_to_spectrum_level(level, fl, fh)
+        sf = calibration.get_sf(freq, level)
+        freq = np.concatenate(([0, fl / 1.01], freq, [fh * 1.01, fs / 2]))
+        sf = np.pad(sf, 2)
+
+        self.taps = signal.firwin2(ntaps, freq=freq, gain=sf, window=window, fs=fs)
+        self.initial_zi = signal.lfilter_zi(self.taps, [1])
+
+        # The RMS value of noise drawn from a uniform distribution is
+        # amplitude/sqrt(3). By setting the low and high to sqrt(3) and
+        # multiplying by the scaling factors, we can ensure that the noise is
+        # initially generated with the desired RMS.
+        self.scale = np.sqrt(3)
+        self.reset()
+
+    def reset(self):
+        self.zi = self.initial_zi
+        self.state = np.random.RandomState(self.seed)
+        self.next(len(self.initial_zi + 1))
+
+    def next(self, samples):
+        waveform = self.state.uniform(low=-self.scale, high=self.scale, size=samples)
+        waveform, self.zi = signal.lfilter(self.taps, [1], waveform, zi=self.zi)
+        return waveform * self.polarity
+
+
+def bandlimited_fir_noise(fs, level, fl, fh, duration, ntaps=10001,
+                          window='hanning', polarity=1, seed=1,
+                          calibration=None):
+    '''
+    Generate shaped noise using `scipy.signal.firwin2`.
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate
+    level : float
+        Level in units of calibration. If no calibration is provided, noise
+        will be scaled such that `rms(noise) == level`.
+    fl : float
+        Lower bound of noise band (Hz).
+    fh : float
+        Upper bound of noise band (Hz).
+    ntaps : int
+        Number of taps to use for filter calculation. See
+        `scipy.signal.firwin2` for hints on choosing a reasonable value.
+    window : {string, (string, float), float, None}
+        Window function to use. See `window` parameter of
+        `scipy.signal.firwin2` for additional details on acceptable values.
+    polarity : {-1, 1}
+        Polarity of noise. Useful if you need to present two trials in inverted
+        polarity to cancel out electrical artifacts.
+    seed : int
+        Seed to use for random number generator.
+    calibration : {BaseCalibration, None}
+        Instance of a `psiaudio.calibration.BaseCalibration` or subclass
+        thereof. Used to determine scaling factor for noise amplitude.
+    '''
+    args = locals()
+    args.pop('duration')
+    factory = BandlimitedFIRNoiseFactory(**args)
+    samples = int(round(duration * fs))
+    return factory.next(samples)
+
+
+################################################################################
+# Shaped noise
+################################################################################
+def _calculate_firwin2_taps(gains, fs, window, ntaps):
+    freqs = list(gains.keys())
+    gains = util.dbi(list(gains.values()))
+    taps = signal.firwin2(ntaps, freqs, gains, fs=fs, window=window)
+    initial_zi = signal.lfilter_zi(taps, [1])
+    return taps, initial_zi
+
+
+class ShapedNoiseFactory(Carrier):
+    '''
+    Factory for generating continuous shaped noise using FIR filters.
+    '''
+    def __init__(self, fs, level, gains, ntaps=1001, window='hanning',
+                 polarity=1, seed=None, calibration=None):
+        vars(self).update(locals())
+
+        self.taps, self.initial_zi = _calculate_firwin2_taps(gains, fs, window, ntaps)
+        self.sf = level if calibration is None else calibration.get_mean_sf(0, fs/2, level)
+
+        # Calculate how much the filter attenuates a *broadband* (i.e., white
+        # noise) signal. This calculation is obviously not accurate for other
+        # types of signals.
+        w, h = signal.freqz(self.taps, fs=fs)
+        h_mean = np.mean(np.abs(h) ** 2) ** 0.5
+        self.filter_sf = 1 / h_mean
+
+        # The RMS value of noise drawn from a uniform distribution is
+        # amplitude/sqrt(3). By setting the low and high to sqrt(3) and
+        # multiplying by the scaling factors, we can ensure that the noise is
+        # initially generated with the desired RMS.
+        self.scale = np.sqrt(3) * self.filter_sf * self.sf
+        self.reset()
+
+    def reset(self):
+        self.zi = self.initial_zi
+        self.state = np.random.RandomState(self.seed)
+        self.next(len(self.initial_zi + 1))
+
+    def next(self, samples):
+        waveform = self.state.uniform(low=-self.scale, high=self.scale, size=samples)
+        waveform, self.zi = signal.lfilter(self.taps, [1], waveform, zi=self.zi)
+        return waveform * self.polarity
+
+
+def shaped_noise(fs, level, gains, duration, ntaps=10001, window='hanning',
+                 polarity=1, seed=1, calibration=None):
+    '''
+    Generate shaped noise using `scipy.signal.firwin2`.
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate
+    level : float
+        Level in units of calibration. If no calibration is provided, noise
+        will be scaled such that `rms(noise) == level`.
+    gains : dict
+        Dictionary mapping frequency breakpoints (Hz) to gain (dB).
+    ntaps : int
+        Number of taps to use for filter calculation. See
+        `scipy.signal.firwin2` for hints on choosing a reasonable value.
+    window : {string, (string, float), float, None}
+        Window function to use. See `window` parameter of
+        `scipy.signal.firwin2` for additional details on acceptable values.
+    polarity : {-1, 1}
+        Polarity of noise. Useful if you need to present two trials in inverted
+        polarity to cancel out electrical artifacts.
+    seed : int
+        Seed to use for random number generator.
+    calibration : {BaseCalibration, None}
+        Instance of a `psiaudio.calibration.BaseCalibration` or subclass
+        thereof. Used to determine scaling factor for noise amplitude.
+    '''
+    args = locals()
+    args.pop('duration')
+    factory = ShapedNoiseFactory(**args)
     samples = int(round(duration * fs))
     return factory.next(samples)
 
@@ -800,7 +973,7 @@ class ClickFactory(FixedWaveform):
 ################################################################################
 # Bandlimited Click
 ################################################################################
-def bandlimited_click(fs, flb, fub, window=0.1, level=1):
+def bandlimited_click(fs, flb, fub, window=0.1, level=1, calibration=None):
     '''
     Generate bandlimited click.
 
@@ -814,7 +987,10 @@ def bandlimited_click(fs, flb, fub, window=0.1, level=1):
     freq = np.fft.rfftfreq(n, d=1/fs)
     psd = np.zeros_like(freq)
     m = (freq >= flb) & (freq < fub)
-    psd[m] = 1
+    if calibration is not None:
+        psd[m] = calibration.get_sf(freq[m], level)
+    else:
+        psd[m] = level
     csd = psd * np.exp(-1j * freq * 2 * np.pi * 0.5)
     waveform = np.fft.irfft(csd)
     lb = int(round(n / 2 - n_window / 2))
@@ -827,8 +1003,8 @@ class BandlimitedClickFactory(FixedWaveform):
 
     def __init__(self, fs, flb, fub, window, level, calibration):
         vars(self).update(locals())
-        sf = calibration.get_sf(0, level)
-        self.waveform = bandlimited_click(fs, flb, fub, window)
+        self.waveform = bandlimited_click(fs, flb, fub, window, level=level,
+                                          calibration=calibration)
         self.reset()
 
 
