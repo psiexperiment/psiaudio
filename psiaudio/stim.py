@@ -350,8 +350,7 @@ def sam_envelope(offset, samples, fs, depth, fm, delay, equalize):
 
 class SAMEnvelopeFactory(Modulator):
 
-    def __init__(self, fs, depth, fm, delay, direction, calibration,
-                 input_factory):
+    def __init__(self, fs, depth, fm, delay, direction, input_factory):
         vars(self).update(locals())
         self.eq_phase = sam_eq_phase(delay, depth, direction)
         self.eq_power = sam_eq_power(depth)
@@ -665,6 +664,67 @@ class ToneFactory(Carrier):
         waveform = tone(self.fs, self.frequency, self.level, self.phase,
                         self.polarity, calibration=self.calibration,
                         offset=self.offset, samples=samples)
+        self.offset += samples
+        return waveform
+
+
+################################################################################
+# SAMTone
+################################################################################
+def sam_tone(fs, fc, fm, level, depth=1, phase=0, polarity=1, calibration=None,
+             samples='auto', offset=0, duration=None, eq_power=True):
+    '''
+    Generates a SAM tone
+
+    Unlike the alternate approach of combining a SAM envelope with a tone
+    carrier, this is specially designed to handle speakers with nonlinear
+    outputs as a function of frequency by adjusting the levels of the harmonics
+    accordingly.
+
+    Parameters
+    ----------
+    # TODO
+    '''
+    frequencies = fc + fm * np.arange(-1, 2)
+    sf = level if calibration is None else calibration.get_sf(frequencies, level)
+    sf = sf * np.array([0.25, 0.5, 0.25])
+    if eq_power:
+        sf /= sam_eq_power(depth)
+
+    if samples == 'auto':
+        if duration is None:
+            raise ValueError('Must provide either duration or samples')
+        samples = int(round(duration * fs))
+    elif duration is not None:
+        raise ValueError('Cannot specify duration if samples is provided')
+
+    # Since the scaling factor is based on Vrms, we need to convert this to the
+    # peak-to-peak scaling factor.
+    t = (np.arange(samples, dtype=np.double) + offset)/fs
+    s = polarity * sf[..., np.newaxis] * np.sqrt(2) * \
+        np.cos(2 * np.pi * t * frequencies[..., np.newaxis] + phase)
+    return np.sum(s, axis=0)
+
+
+class SAMToneFactory(Carrier):
+
+    def __init__(self, fs, fc, fm, level, depth=1, phase=0, polarity=1,
+                 eq_power=True, calibration=None):
+        vars(self).update(locals())
+        self.reset()
+
+    def reset(self):
+        self.offset = 0
+
+    def next(self, samples):
+        # Note. At least for 5 msec tones it's faster to just compute the array
+        # rather than cache the result.
+        waveform = sam_tone(
+            fs=self.fs, fc=self.fc, fm=self.fm, level=self.level,
+            depth=self.depth, phase=self.phase, polarity=self.polarity,
+            eq_power=self.eq_power, calibration=self.calibration,
+            offset=self.offset, samples=samples
+        )
         self.offset += samples
         return waveform
 
