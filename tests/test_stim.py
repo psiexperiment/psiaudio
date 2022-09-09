@@ -1,6 +1,7 @@
 import pytest
 
 import numpy as np
+import pandas as pd
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 from scipy import signal
 
@@ -263,7 +264,7 @@ def test_square_wave(fs, square_wave_duty_cycle):
 
 
 ################################################################################
-# Square wave envelope
+# SAM envelope
 ################################################################################
 @pytest.fixture(scope='module', params=[0, 0.25, 0.5, 1.0])
 def mod_envelope_depth(request):
@@ -284,6 +285,77 @@ def test_sam_envelope(mod_envelope_depth, mod_envelope_fm):
     result = stim.sam_envelope(offset, samples, fs, mod_envelope_depth,
                                mod_envelope_fm, delay, equalize=True)
     assert util.rms(result) == pytest.approx(1)
+
+
+################################################################################
+# SAM tone
+################################################################################
+@pytest.fixture(scope='module', params=[4e3, 5.6e3, 8e3])
+def mod_fc(request):
+    return request.param
+
+
+def test_sam_tone(fs, stim_level, mod_fc, mod_envelope_fm, mod_envelope_depth,
+                  chunksize, n_chunks):
+
+    cal = calibration.FlatCalibration.from_spl(94)
+    kwargs = dict(fs=fs, fc=mod_fc, fm=mod_envelope_fm,
+                  depth=mod_envelope_depth, level=stim_level,
+                  calibration=cal, eq_power=False)
+
+    if round(fs) != fs:
+        # This causes some annoying indexing issues.
+        pytest.skip()
+
+    factory = stim.SAMToneFactory(**kwargs)
+    s = factory.next(samples=int(fs * 30))
+    s_psd = util.psd_df(s, fs, waveform_averages=30)
+    s_spl = pd.Series(
+        cal.get_db(s_psd.index, s_psd.values),
+        index=s_psd.index
+    )
+    assert pytest.approx(s_spl.loc[mod_fc], abs=0.5) == (stim_level - 6)
+    assert pytest.approx(s_spl.loc[mod_fc-mod_envelope_fm], abs=0.5) == (stim_level - 12)
+    assert pytest.approx(s_spl.loc[mod_fc+mod_envelope_fm], abs=0.5) == (stim_level - 12)
+    assert np.sum(s_spl > (stim_level-20)) == 3
+
+
+def test_sam_tone_starship(fs, stim_level, mod_fc, mod_envelope_fm,
+                           mod_envelope_depth, chunksize, n_chunks):
+
+    # This ensures that the SAM tone generation properly compensates for
+    # nonlinearities in the acoustic system. If the speaker output is lower at
+    # a certain frequency, the SAM tone harmonic needs to be boosted to
+    # compensate.
+    cal = calibration.PointCalibration.from_spl(
+        [mod_fc - mod_envelope_fm, mod_fc, mod_fc + mod_envelope_fm],
+        [-6, 0, 6]
+    )
+    kwargs = dict(fs=fs, fc=mod_fc, fm=mod_envelope_fm,
+                  depth=mod_envelope_depth, level=stim_level,
+                  calibration=cal, eq_power=False)
+
+    if round(fs) != fs:
+        # This causes some annoying indexing issues.
+        pytest.skip()
+
+    factory = stim.SAMToneFactory(**kwargs)
+    s = factory.next(samples=int(fs * 30))
+    s_psd = util.db(util.psd_df(s, fs, waveform_averages=30))
+    assert pytest.approx(s_psd.loc[mod_fc], abs=0.5) == (stim_level - 6)
+    assert pytest.approx(s_psd.loc[mod_fc-mod_envelope_fm], abs=0.5) == (stim_level - 12 + 6)
+    assert pytest.approx(s_psd.loc[mod_fc+mod_envelope_fm], abs=0.5) == (stim_level - 12 - 6)
+    assert np.sum(s_psd > (stim_level-20)) == 3
+
+
+def test_sam_tone_factory(fs, stim_level, mod_fc, mod_envelope_fm,
+                          mod_envelope_depth, stim_calibration, chunksize,
+                          n_chunks):
+    kwargs = dict(fs=fs, fc=mod_fc, fm=mod_envelope_fm,
+                  depth=mod_envelope_depth, level=stim_level,
+                  calibration=stim_calibration)
+    assert_chunked_generation(stim.SAMToneFactory, kwargs, chunksize,
+                              n_chunks, exact=True)
 
 
 ################################################################################
