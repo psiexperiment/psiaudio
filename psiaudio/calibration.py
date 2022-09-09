@@ -279,6 +279,7 @@ class InterpCalibration(BaseFrequencyCalibration):
     def get_sens(self, frequency):
         # Since sensitivity is in dB(V), subtracting fixed_gain from
         # sensitivity will *increase* the sensitivity of the system.
+        frequency = np.asarray(frequency)
         return self._interp(frequency)-self.fixed_gain
 
     def get_phase(self, frequency):
