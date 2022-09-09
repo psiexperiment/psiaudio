@@ -723,6 +723,38 @@ def resample_poly(waveform, fs, target_fs):
 
 
 def psd_bootstrap(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None):
+    '''
+    Calculate the normalized PSD across trials using a boostrapping algorithm
+
+    To estmate the noise floor, the CSD of each trial is computed and then the
+    phases of the CSD are randomized.
+
+    Parameters
+    ----------
+    x : array
+        Signal to compute PSD noise floor over. Must be trial x time.
+    fs : float
+        Sampling rate of signal
+    n_draw : int
+        Number of trials to draw on each bootstrap cycle.
+    n_bootstrap : int
+        Number of bootstrap cycles.
+    rng : instance of RandomState
+        If provided, this will be used to drive the bootstrapping algorithm.
+        Useful when you need to "freeze" results (e.g., for publication).
+    window : {None, string}
+        Type of window to use when calculating bootstrapped PSD.
+
+    Result
+    ------
+    psd_bs : DataFrame
+        Pandas DataFrame indexed by frequency. Columns include `psd_nf`, the
+        noise floor as estimated by the bootstrapping algorithm.
+
+    Notes
+    -----
+    TODO: Add citation (Bharadwaj).
+    '''
     if rng is None:
         rng = np.random.RandomState()
 
