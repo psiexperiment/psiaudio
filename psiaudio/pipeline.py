@@ -1253,7 +1253,9 @@ def reject_epochs(reject_threshold, mode, status_cb, valid_target):
         th = __th_cb__()
         mask = accept(np.asarray(data), th)[:, 0]
         valid_data = data[mask]
-        valid_data.add_metadata('reject_threshold', th)
+        if isinstance(valid_data, PipelineData):
+            valid_data.add_metadata('reject_threshold', th)
+
         n = len(data)
         n_accept = len(valid_data)
 
