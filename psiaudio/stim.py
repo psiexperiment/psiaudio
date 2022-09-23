@@ -1118,7 +1118,6 @@ def load_wav(fs, filename, level, calibration, normalization='pe'):
     '''
     log.warning('Loading %s', filename)
     file_fs, waveform = wavfile.read(filename, mmap=True)
-    print(f"Waveform loaded! min={waveform.min()}, {waveform.max()}")
     # Rescale to range -1.0 to 1.0
     if waveform.dtype != np.float32:
         ii = np.iinfo(waveform.dtype)
