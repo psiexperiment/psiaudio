@@ -1091,17 +1091,46 @@ class BandlimitedClickFactory(FixedWaveform):
 # Wavfiles
 ################################################################################
 @fast_cache
-def load_wav(fs, filename, level, calibration):
+def load_wav(fs, filename, level, calibration, normalization='pe'):
+    '''
+    Load wav file, scale, and resample
+
+    Parameters
+    ----------
+    fs : float
+        Desired sampling rate for wav file. If wav file sampling rate is
+        different, it will be resampled to the correct sampling rate using a
+        FFT-based resampling algorithm.
+    filename : {str, Path}
+        Path to wav file
+    level : float
+        Level to present wav files at. If normalization is `'pe'`, level will
+        be in units of peSPL (assuming calibration is in units of SPL). If
+        normalization is in `'rms'`, level will be dB SPL RMS.
+    calibration : instance of Calibration
+        Used to scale waveform to appropriate peSPL. If not provided,
+        waveform is not scaled.
+    normalization : {'pe', 'rms'}
+        Method for rescaling waveform. If `'pe'`, rescales to peak-equivalent
+        so the max value of the waveform matches the target level. If `'rms'`,
+        rescales so that the RMS value of the waveform matches the target
+        level.
+    '''
     log.warning('Loading %s', filename)
     file_fs, waveform = wavfile.read(filename, mmap=True)
-
+    print(f"Waveform loaded! min={waveform.min()}, {waveform.max()}")
     # Rescale to range -1.0 to 1.0
     if waveform.dtype != np.float32:
         ii = np.iinfo(waveform.dtype)
         waveform = waveform.astype(np.float32)
         waveform = (waveform - ii.min) / (ii.max - ii.min) * 2 - 1
 
-    waveform = waveform / waveform.max()
+    if normalization == 'pe':
+        waveform = waveform / waveform.max()
+    elif normalization == 'rms':
+        wavform = waveform / util.rms(waveform)
+    else:
+        raise ValueError(f'Unrecognized normalization: {normalization}')
 
     if calibration is not None:
         sf = calibration.get_sf(1e3, level)
@@ -1117,21 +1146,25 @@ def load_wav(fs, filename, level, calibration):
 
 class WavFileFactory(FixedWaveform):
 
-    def __init__(self, fs, filename, level=None, calibration=None):
+    def __init__(self, fs, filename, level=None, calibration=None,
+                 normalization='pe'):
         self.fs = fs
         self.filename = filename
         self.level = level
         self.calibration = calibration
+        self.normalization = normalization
         self.reset()
 
     @property
     def waveform(self):
-        return load_wav(self.fs, self.filename, self.level, self.calibration)
+        return load_wav(self.fs, self.filename, self.level, self.calibration,
+                        normalization=self.normalization)
 
 
 class WavSequenceFactory(ContinuousWaveform):
 
-    def __init__(self, fs, path, level=None, calibration=None, duration=None):
+    def __init__(self, fs, path, level=None, calibration=None, duration=-1,
+                 normalization='pe'):
         '''
         Parameters
         ----------
@@ -1156,10 +1189,16 @@ class WavSequenceFactory(ContinuousWaveform):
             presentation time of a particular wav file; estimating the overall
             duration of the entire wav sequence, etc.  If you don't have a need
             for these operations and want to speed up loading of wav files, set
-            this value to -1.
+            this value to -1 (the default).
+        normalization : {'pe', 'rms'}
+            Method for rescaling waveform. If `'pe'`, rescales to
+            peak-equivalent so the max value of the waveform matches the target
+            level. If `'rms'`, rescales so that the RMS value of the waveform
+            matches the target level.
         '''
         self.wav_files = wavs_from_path(fs, path, level=level,
-                                        calibration=calibration)
+                                        calibration=calibration,
+                                        normalization=normalization)
         self.fs = fs
         self.duration = duration
         self.reset()
