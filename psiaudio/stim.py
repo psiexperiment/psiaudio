@@ -1127,7 +1127,7 @@ def load_wav(fs, filename, level, calibration, normalization='pe'):
     if normalization == 'pe':
         waveform = waveform / waveform.max()
     elif normalization == 'rms':
-        wavform = waveform / util.rms(waveform)
+        waveform = waveform / util.rms(waveform)
     else:
         raise ValueError(f'Unrecognized normalization: {normalization}')
 
