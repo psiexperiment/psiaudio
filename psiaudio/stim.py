@@ -1131,15 +1131,42 @@ class WavFileFactory(FixedWaveform):
 
 class WavSequenceFactory(ContinuousWaveform):
 
-    def __init__(self, fs, path, level=None, calibration=None):
+    def __init__(self, fs, path, level=None, calibration=None, duration=None):
+        '''
+        Parameters
+        ----------
+        fs : float
+            Sampling rate of output. If wav file sampling rate is different, it
+            will be resampled to the correct sampling rate using a FFT-based
+            resampling algorithm.
+        path : {str, Path}
+            Path to directory containing wav files.
+        level : float
+            Level to present wav files at (currently peSPL due to how the
+            normalization works).
+        calibration : instance of Calibration
+            Used to scale waveform to appropriate peSPL. If not provided,
+            waveform is not scaled.
+        duration : {None, float}
+            Duration of each wav file. If None, the wav file is loaded at the
+            beginning so that durations can be established. For large
+            directories, this can slow down the startup time of the program.
+            Knowing the exact duration may be important for some downstream
+            operations. For example, epoch extraction relative to the
+            presentation time of a particular wav file; estimating the overall
+            duration of the entire wav sequence, etc.  If you don't have a need
+            for these operations and want to speed up loading of wav files, set
+            this value to -1.
+        '''
         self.wav_files = wavs_from_path(fs, path, level=level,
                                         calibration=calibration)
         self.fs = fs
+        self.duration = duration
         self.reset()
 
     def reset(self):
         self.queue = queue.BlockedRandomSignalQueue(self.fs)
-        self.queue.extend(self.wav_files, np.inf)
+        self.queue.extend(self.wav_files, np.inf, duration=self.duration)
 
     def next(self, samples):
         return self.queue.pop_buffer(samples)
