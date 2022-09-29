@@ -30,7 +30,7 @@ def dbtopa(db):
     '''
     Convert dB SPL to Pascal
 
-    .. math:: 10^{dB/20.0}/(20\cdot10^{-6})
+    .. math:: 10^{dB/20.0}/(20\\cdot10^{-6})
 
     >>> round(dbtopa(94), 4)
     1.0024
@@ -83,10 +83,7 @@ def normalize_rms(waveform, out=None):
     return np.divide(waveform, rms(waveform), out)
 
 
-def csd(s, window=None, waveform_averages=None, detrend='linear'):
-    if waveform_averages is not None and waveform_averages != 1:
-        new_shape = (waveform_averages, -1) + s.shape[1:]
-        s = s.reshape(new_shape).mean(axis=0)
+def csd(s, window=None, detrend='linear'):
     if detrend is not None:
         s = signal.detrend(s, type=detrend, axis=-1)
     n = s.shape[-1]
@@ -126,10 +123,10 @@ def psd(s, fs, window=None, waveform_averages=None, trim_samples=True):
     if trim_samples:
         n = (s.shape[-1] // waveform_averages) * waveform_averages
         s = s[..., :n]
-    new_shape = (waveform_averages, -1) + s.shape[1:]
+    new_shape = s.shape[:-1] + (waveform_averages, -1)
     s = s.reshape(new_shape)
-    c = csd(s, window)
-    return np.abs(c).mean(axis=0)
+    c = csd(s, window=window)
+    return np.abs(c).mean(axis=-2)
 
 
 def psd_freq(s, fs):
@@ -159,9 +156,18 @@ def psd_df(s, fs, *args, waveform_averages=None, **kw):
         conversion into DataFrame).
     fs : float
         Sampling rate of data.
+    window : {None, string}
+        Applies given window to signal before computing FFT. If None, no
+        windowing is performed. Name of window must be a valid window name that
+        can be passed to `scipy.signal.get_window`.
     waveform_averages : {None, int}
         Number of chunks to segment time data into before computing PSD.
         Averaging is done after computing the PSD.
+    trim_samples : bool
+        If true, remove excess time samples so that waveform can be split into
+        `waveform_averages` segments of equal size. If False and the number of
+        timepoints is not an integer multiple of `waveform_averages`, an error
+        will be raised.
 
     Additional arguments are passed to :func:`~psiaudio.util.psd`.
 
