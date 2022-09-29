@@ -86,18 +86,29 @@ class AbstractSignalQueue:
     def remaining_trials(self, key):
         return self._data[key]['trials']
 
-    def rewind_samples(self, t):
+    def rewind_samples(self, t, check=True):
+        '''
+        Parameters
+        ----------
+        t : float
+            Time (in sec) to rewind samples back to.
+        check : bool
+            If True, new time must be before current time of queue. If False,
+            can be set to a later time.
+
+        As a side note, I'm not sure that the "check" flag is needed. Do we
+        really need to check how the new time compares to the old time? The
+        reason why we adjust the time is to enable pause/resume functionality.
+        Perhaps we should drop rewind_samples and make it set_time with no
+        requirement that the new time be related to the old time in any
+        particular way.
+        '''
         # Reset the samples
-        log.debug('Current queue time is %.3f. Attempting to rewind queue to %.3f.', self.get_ts(), t)
-        t_samples = round(t * self._fs)
-        t0_samples = round(self._t0 * self._fs)
-        new_sample = t_samples - t0_samples
-        log.debug('Current queue sample is %d. New queue sample is %d.', self._samples, new_sample)
-        if new_sample > self._samples:
+        new_sample = int(round((t - self._t0) * self._fs))
+        if check and (new_sample > self._samples):
             raise ValueError(f'Cannot rewind past last sample generated. Requested {t:.3f}s, last sample was {self.get_ts():.3f}s.')
-        self._samples = t_samples - t0_samples
+        self._samples = new_sample
         log.debug('Rewound queue samples back to %d', self._samples)
-        log.debug('Absolute sample %d, relative sample %d', t_samples, t0_samples)
 
     def pause(self, t=None):
         log.debug('Pausing queue')
@@ -163,10 +174,10 @@ class AbstractSignalQueue:
         t : float
             Time, in sec, to resume generating trials from queue.
         """
-        log.debug('Resuming queue. Current timestamp is %.3f.', self.get_ts())
         if t is not None:
-            self.rewind_samples(t)
+            self.rewind_samples(t, False)
         self._paused = False
+        log.debug('Resumed queue. Current timestamp is %.3f.', self.get_ts())
 
     def is_empty(self):
         return self._empty
