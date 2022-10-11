@@ -559,7 +559,7 @@ class BandlimitedFIRNoiseFactory(Carrier):
     bandlimited noise (i.e., no requirement to generate the dictionary of
     gains).
     '''
-    def __init__(self, fs, fl, fh, level, ntaps=1001, window='hanning',
+    def __init__(self, fs, fl, fh, level, ntaps=1001, window='hann',
                  polarity=1, seed=None, equalize=True, calibration=None):
         vars(self).update(locals())
 
