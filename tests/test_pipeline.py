@@ -133,6 +133,14 @@ def test_pipeline_data_astype():
     assert_pipeline_data_equal((pd > 0.5), pd_th.astype('bool'))
 
 
+def test_negative_s0():
+    md = {'foo': 'bar'}
+    d = np.random.uniform(size=100000)
+    data = pipeline.PipelineData(d, 100e3, metadata=md, s0=-64)
+    assert data[::8].s0 == -64
+    print(data)
+    assert False
+
 def test_pipeline_data_1d(data1d):
     fs = data1d.fs
     md = data1d.metadata.copy()
