@@ -14,6 +14,9 @@ SI unit is in kHz even if the data SI unit is in Hz:
 from psiaudio.util import octave_space
 from matplotlib import ticker as mticker
 from matplotlib import scale as mscale
+from matplotlib import transforms as T
+import numpy as np
+import pandas as pd
 
 # Factor to multiply tick location by to transform from data SI prefix to label
 # SI prefix.
@@ -82,3 +85,52 @@ class OctaveScale(mscale.ScaleBase):
 
 
 mscale.register_scale(OctaveScale)
+
+
+def waterfall_plot(axes, waveforms):
+    levels = waveforms.index.get_level_values('level')
+    t = waveforms.columns.values * 1e3
+    waveforms = waveforms.values
+    n = len(waveforms)
+    offset_step = 1/(n+1)
+
+    text_trans = T.blended_transform_factory(axes.figure.transFigure,
+                                             axes.transAxes)
+
+    limits = [(w.min(), w.max()) for w in waveforms]
+    base_scale = np.mean(np.abs(np.array(limits)))
+
+    bscale_in_box = T.Bbox([[0, -base_scale], [1, base_scale]])
+    bscale_out_box = T.Bbox([[0, -1], [1, 1]])
+    bscale_in = T.BboxTransformFrom(bscale_in_box)
+    bscale_out = T.BboxTransformTo(bscale_out_box)
+
+    tscale_in_box = T.Bbox([[0, -1], [1, 1]])
+    tscale_out_box = T.Bbox([[0, 0], [1, offset_step]])
+    tscale_in = T.BboxTransformFrom(tscale_in_box)
+    tscale_out = T.BboxTransformTo(tscale_out_box)
+
+    for i, (l, w) in enumerate(zip(levels, waveforms)):
+        y_min, y_max = w.min(), w.max()
+        tnorm_in_box = T.Bbox([[0, -1], [1, 1]])
+        tnorm_out_box = T.Bbox([[0, -1], [1, 1]])
+        tnorm_in = T.BboxTransformFrom(tnorm_in_box)
+        tnorm_out = T.BboxTransformTo(tnorm_out_box)
+
+        offset = offset_step * i + offset_step * 0.5
+        translate = T.Affine2D().translate(0, offset)
+
+        y_trans = bscale_in + bscale_out + \
+            tnorm_in + tnorm_out + \
+            tscale_in + tscale_out + \
+            translate + axes.transAxes
+        trans = T.blended_transform_factory(axes.transData, y_trans)
+
+        axes.plot(t, w, transform=trans, clip_on=False, color='k')
+        text_trans = T.blended_transform_factory(axes.transAxes, y_trans)
+        axes.text(-0.05, 0, str(l), transform=text_trans)
+
+    axes.set_yticks([])
+    axes.grid()
+    for spine in ('top', 'left', 'right'):
+        axes.spines[spine].set_visible(False)
