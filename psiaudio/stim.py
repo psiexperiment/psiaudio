@@ -1011,28 +1011,54 @@ def repeat(waveform, fs, n, skip_n, rate, delay=0):
 ################################################################################
 # Chirp
 ################################################################################
+def chirp(fs, start_frequency, end_frequency, duration, level,
+          calibration=None, window='boxcar', equalize=False):
+    '''
+    Notes
+    -----
+    Windowing algorithm was implemented as described in Neumann et al., 1994 to
+    enable implementation of the Hann windowed chirp in the middel ear acoustic
+    reflex assay described by Valero et al., 2016.
+    '''
+
+    # Compute the window and get the normalized integral. This is used to
+    # adjust the instantaneous frequency so that we "dwell" longer on
+    # frequencies that are attenuated at the boundaries of the window.
+    n = int(fs * duration)
+    w = signal.get_window(window, n)
+    wi_norm = np.cumsum(w ** 2) / np.sum(w ** 2)
+    ifreq = wi_norm * (end_frequency - start_frequency) + start_frequency
+
+    # Now, we calculate the phase (the time integral of frequency). Divide by
+    # fs is equivalent to multiplying by the period (i.e., dt).
+    phase = np.cumsum(ifreq) / fs
+
+    # Figure out scaling factor. If no calibration is provided, assume that
+    # level is specified in Vrms.
+    if calibration is None:
+        if equalize:
+            raise ValueError('Cannot equalize signal without calibration')
+        sf = level
+    else:
+        if not equalize:
+            sf = calibration.get_sf(ifreq, level).mean()
+        else:
+            sf = calibration.get_sf(ifreq, level)
+
+    # We need to normalize the window so that it has a RMS of 1. Then, we
+    # multiply by the square root of 2 since we are using the sin function
+    # (e.g. Vpeak = np.sqrt(2) * Vrms). Finally, multiply by the scaling factor
+    # that gives us our desired level.
+    w /= util.rms(w)
+    return np.sqrt(2) * sf * w * np.sin(2 * np.pi * phase)
+
+
 class ChirpFactory(FixedWaveform):
 
     def __init__(self, fs, start_frequency, end_frequency, duration, level,
-                 calibration):
-
+                 calibration, window='boxcar', equalize=False):
         vars(self).update(locals())
-
-        f0 = start_frequency
-        f1 = end_frequency
-
-        n = int(fs*duration)
-        t = np.arange(n, dtype=np.double) / fs
-        k = (end_frequency-start_frequency)/duration
-
-        # Compute instantaneous frequency, which can be used to compute the
-        # instantaneous scaling factor for each timepoint (thereby compensating
-        # for nonlinearities in the output).
-        ifreq = t*k + start_frequency
-        sf = calibration.get_sf(ifreq, level)*np.sqrt(2)
-
-        # Now, compute the chirp
-        self.waveform = sf*np.sin(2*np.pi*(start_frequency*t + k/2 * t**2))
+        self.waveform = chirp(**locals())
         self.reset()
 
 
