@@ -990,7 +990,7 @@ class RepeatFactory(FixedWaveform):
                                self.rate, self.delay)
 
 
-def repeat(waveform, fs, n, skip_n, rate, delay=0):
+def repeat(waveform, fs, n, skip_n, rate, delay):
     s_period = int(round(fs / rate))
     s_waveform = len(waveform)
     s_delay = int(round(fs * delay))
@@ -1057,8 +1057,10 @@ class ChirpFactory(FixedWaveform):
 
     def __init__(self, fs, start_frequency, end_frequency, duration, level,
                  calibration, window='boxcar', equalize=False):
-        vars(self).update(locals())
-        self.waveform = chirp(**locals())
+        kwargs = locals()
+        kwargs.pop('self')
+        vars(self).update(kwargs)
+        self.waveform = chirp(**kwargs)
         self.reset()
 
 
