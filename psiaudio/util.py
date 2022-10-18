@@ -342,6 +342,10 @@ def rms_rfft(x):
     return np.sqrt(np.sum(np.abs(x) ** 2))
 
 
+def rms_rfft_db(x, *args, **kw):
+    return db(rms_rfft(dbi(x, *args, **kw)))
+
+
 def golay_pair(n=15):
     '''
     Generate pair of Golay sequences
