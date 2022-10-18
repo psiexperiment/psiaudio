@@ -87,9 +87,12 @@ class OctaveScale(mscale.ScaleBase):
 mscale.register_scale(OctaveScale)
 
 
-def waterfall_plot(axes, waveforms):
-    levels = waveforms.index.get_level_values('level')
-    t = waveforms.columns.values * 1e3
+def waterfall_plot(axes, waveforms, waterfall_level='level',
+                   scale_method='mean', plotkw=None, x_transform=None):
+    if x_transform is None:
+        x_transform = lambda x: x
+    levels = waveforms.index.get_level_values(waterfall_level)
+    t = x_transform(waveforms.columns.values)
     waveforms = waveforms.values
     n = len(waveforms)
     offset_step = 1/(n+1)
@@ -98,7 +101,19 @@ def waterfall_plot(axes, waveforms):
                                              axes.transAxes)
 
     limits = [(w.min(), w.max()) for w in waveforms]
-    base_scale = np.mean(np.abs(np.array(limits)))
+
+    if scale_method == 'mean':
+        base_scale = np.mean(np.abs(np.array(limits)))
+    elif scale_method == 'max':
+        base_scale = np.max(np.abs(np.array(limits)))
+    else:
+        raise ValueError(f'Unsupported scale_method "{scale_method}"')
+
+    if plotkw is None:
+        plotkw = {
+            'color': 'k',
+            'clip_on': False,
+        }
 
     bscale_in_box = T.Bbox([[0, -base_scale], [1, base_scale]])
     bscale_out_box = T.Bbox([[0, -1], [1, 1]])
@@ -126,7 +141,7 @@ def waterfall_plot(axes, waveforms):
             translate + axes.transAxes
         trans = T.blended_transform_factory(axes.transData, y_trans)
 
-        axes.plot(t, w, transform=trans, clip_on=False, color='k')
+        axes.plot(t, w, transform=trans, **plotkw)
         text_trans = T.blended_transform_factory(axes.transAxes, y_trans)
         axes.text(-0.05, 0, str(l), transform=text_trans)
 
