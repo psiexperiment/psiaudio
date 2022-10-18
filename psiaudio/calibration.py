@@ -76,9 +76,42 @@ class BaseCalibration:
         if reference is not None:
             setattr(self, f'get_{reference.lower()}', self.get_db)
 
-    def get_db(self, frequency, voltage):
+    def _get_db(self, frequency, voltage):
         sensitivity = self.get_sens(frequency)
         return util.db(voltage) + sensitivity
+
+    def get_db(self, *args):
+        '''
+        Convert voltage into dB re reference unit for calibration (e.g., dB
+        SPL).
+
+        This function accepts one or two arguments. If one argument is
+        provided, it must be a series or dataframe. For the series, the index
+        must be frequency (in Hz). For the dataframe, the columns must be
+        frequency (in Hz). This plays well with the output of other functions
+        in this module (e.g., `~util.psd_df`).
+
+        If two arguments are provided, the first argument must be frequency and
+        the second voltage.
+        '''
+        if len(args) == 1:
+            if isinstance(args[0], pd.DataFrame):
+                frequency = args[0].columns.values
+                voltage = args[0].values
+                db = self._get_db(frequency, voltage)
+                return pd.DataFrame(db, index=args[0].index,
+                                    columns=args[0].columns)
+            elif isinstance(args[0], pd.Series):
+                frequency = args[0].index.values
+                voltage = args[0].values
+                db = self._get_db(frequency, voltage)
+                return pd.Series(db, index=args[0].index)
+            else:
+                raise ValueError('Unsupported input arguments')
+        elif len(args) == 2:
+            return self._get_db(*args)
+        else:
+            raise ValueError('Unsupported input arguments')
 
     def get_sf(self, frequency, level, attenuation=0):
         sensitivity = self.get_sens(frequency)
