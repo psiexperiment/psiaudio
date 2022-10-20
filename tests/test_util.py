@@ -72,8 +72,9 @@ def test_fft_tone_averages(fs):
 
 
 def test_band_to_spectrum_level_roundtrip(spectrum_level, noise_band):
-    band_level = util.spectrum_to_band_level(spectrum_level, *noise_band)
-    spectrum_level_rt = util.band_to_spectrum_level(band_level, *noise_band)
+    n = noise_band[1] - noise_band[0]
+    band_level = util.spectrum_to_band_level(spectrum_level, n)
+    spectrum_level_rt = util.band_to_spectrum_level(band_level, n)
     assert spectrum_level == pytest.approx(spectrum_level_rt)
 
 
@@ -95,7 +96,8 @@ def test_rms(noise_csd, noise_signal, spectrum_level, noise_band):
     rms_signal = util.patodb(util.rms(noise_signal))
     assert rms_fft == pytest.approx(rms_signal, 2)
 
-    expected_db = util.spectrum_to_band_level(spectrum_level, *noise_band)
+    n = noise_band[1] - noise_band[0]
+    expected_db = util.spectrum_to_band_level(spectrum_level, n)
     assert expected_db == pytest.approx(rms_fft)
     assert expected_db == pytest.approx(rms_signal)
 
@@ -263,7 +265,10 @@ def test_rms_rfft(spectrum_level, noise_band):
     lb = int(lb)
     ub = int(ub)
     psd[lb:ub] = util.dbi(spectrum_level)
-    expected_level = util.spectrum_to_band_level(spectrum_level, *noise_band)
+
+    n = noise_band[1] - noise_band[0]
+    expected_level = util.spectrum_to_band_level(spectrum_level, n)
+
     actual_level = util.db(util.rms_rfft(psd))
     assert expected_level == pytest.approx(actual_level, 2)
 
