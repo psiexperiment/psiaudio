@@ -217,6 +217,7 @@ class PipelineData(np.ndarray):
         else:
             self.metadata[key] = value
 
+
 def ensure_dim(arrays, dim):
     ndim = arrays[0].ndim
     if dim == 'channel' and ndim == 1:
