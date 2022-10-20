@@ -1041,7 +1041,8 @@ def chirp(fs, start_frequency, end_frequency, duration, level,
         sf = level
     else:
         if not equalize:
-            sf = calibration.get_sf(ifreq, level).mean()
+            sf = util.dbi(util.db(calibration.get_sf(ifreq, level)).mean())
+            #sf = calibration.get_sf(ifreq, level).mean()
         else:
             sf = calibration.get_sf(ifreq, level)
 
@@ -1080,7 +1081,8 @@ class ClickFactory(FixedWaveform):
 ################################################################################
 # Bandlimited Click
 ################################################################################
-def bandlimited_click(fs, flb, fub, window=0.1, level=1, calibration=None):
+def bandlimited_click(fs, flb, fub, window=0.1, level=1, calibration=None,
+                      equalize=False):
     '''
     Generate bandlimited click.
 
@@ -1089,20 +1091,32 @@ def bandlimited_click(fs, flb, fub, window=0.1, level=1, calibration=None):
 
     The click waveform will be symmetric around the center of the window.
     '''
+
     n_window = int(round(window * fs))
     n = int(round(fs))
     freq = np.fft.rfftfreq(n, d=1/fs)
     psd = np.zeros_like(freq)
     m = (freq >= flb) & (freq < fub)
-    if calibration is not None:
-        psd[m] = calibration.get_sf(freq[m], level)
+    psd[m] = 1
+
+    if calibration is None:
+        if equalize:
+            raise ValueError('Cannot equalize signal without calibration')
+        sf = level
     else:
-        psd[m] = level
+        if not equalize:
+            sf = calibration.get_sf(freq[m], level)
+            psd[m] = psd[m] * sf / sf.mean()
+        else:
+            sf = calibration.get_sf(freq[m], level)
+
+    sf = util.dbi(util.db(sf).mean())
+
     csd = psd * np.exp(-1j * freq * 2 * np.pi * 0.5)
-    waveform = np.fft.irfft(csd)
+    waveform = util.csd_to_signal(csd)
+    waveform = waveform / waveform.ptp() * sf
     lb = int(round(n / 2 - n_window / 2))
     waveform = waveform[lb:lb+n_window]
-    waveform /= waveform.ptp()
     return waveform
 
 

@@ -1,6 +1,8 @@
 import logging
 log = logging.getLogger(__name__)
 
+from importlib import resources
+
 from scipy.interpolate import interp1d
 import numpy as np
 import pandas as pd
@@ -350,3 +352,13 @@ class PointCalibration(BaseFrequencyCalibration):
 if __name__ == '__main__':
     import doctest
     doctest.testmod()
+
+
+################################################################################
+# Example calibrations
+################################################################################
+def load_demo_starship():
+    cal_file = resources.files('psiaudio.resources') / 'starship_cal.csv'
+    with resources.as_file(cal_file) as fh:
+        cal = pd.read_csv(fh)
+        return InterpCalibration(cal['freq'], cal['SPL'], phase=cal['phase'])

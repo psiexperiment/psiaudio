@@ -97,7 +97,7 @@ def csd(s, window=None, detrend='linear'):
 def csd_to_signal(csd):
     n = 2 * (len(csd) - 1)
     scale = 2 / n / np.sqrt(2)
-    return np.fft.irfft(csd, axis=-1) / scale
+    return np.fft.irfft(csd / scale, axis=-1)
 
 
 def _phase(csd, unwrap=True):
@@ -318,18 +318,48 @@ def analyze_tone(waveforms, frequency, fs, mic_gain, trim=0, thd_harmonics=3):
     }
 
 
-def spectrum_to_band_level(spectrum_db, flb, fub):
+def spectrum_to_band_level(spectrum_db, n):
     '''
-    Convert overall band level to spectrum level
+    Convert spectrum level to overall level
+
+    Parameters
+    ----------
+    band_db : float
+        Band level in dB re. reference (e.g., dB SPL).
+    n : int
+        Number of bands. If you are trying to compare this to an FFT with 1 Hz
+        resolution, this is equal to the bandwidth (in Hz). If you are
+        comparing this to an FFT with a bin size of 500 Hz, then this is equal
+        to the bandwidth / 500.
+
+    Returns
+    -------
+    spectrum_db : float
+        Spectrum level in same units as band level.
     '''
-    return spectrum_db + 10 * np.log10(fub - flb)
+    return spectrum_db + 10 * np.log10(n)
 
 
-def band_to_spectrum_level(band_db, flb, fub):
+def band_to_spectrum_level(band_db, n):
     '''
     Convert overall band level to spectrum level
+
+    Parameters
+    ----------
+    band_db : float
+        Band level in dB re. reference (e.g., dB SPL).
+    n : int
+        Number of bands. If you are trying to compare this to an FFT with 1 Hz
+        resolution, this is equal to the bandwidth (in Hz). If you are
+        comparing this to an FFT with a bin size of 500 Hz, then this is equal
+        to the bandwidth / 500.
+
+    Returns
+    -------
+    spectrum_db : float
+        Spectrum level in same units as band level.
     '''
-    return band_db - 10 * np.log10(fub - flb)
+    return band_db - 10 * np.log10(n)
 
 
 def rms(s, detrend=False):
