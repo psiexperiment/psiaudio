@@ -201,7 +201,7 @@ class FlatCalibration(BaseCalibration):
     @classmethod
     def from_mv_pa(cls, mv_pa, **kwargs):
         sens = util.db(1 / (mv_pa * 1e-3)) - util.db(20e-6)
-        return cls(sensitivity=sens, **kwargs)
+        return cls(sensitivity=sens, reference='SPL', **kwargs)
 
     @classmethod
     def as_attenuation(cls, vrms=1, **kwargs):
