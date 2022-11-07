@@ -597,7 +597,7 @@ class BandlimitedFIRNoiseFactory(Carrier):
 
 
 def bandlimited_fir_noise(fs, level, fl, fh, duration, ntaps=10001,
-                          window='hanning', polarity=1, seed=1,
+                          window='hann', polarity=1, seed=1,
                           calibration=None):
     '''
     Generate shaped noise using `scipy.signal.firwin2`.
@@ -650,7 +650,7 @@ class ShapedNoiseFactory(Carrier):
     '''
     Factory for generating continuous shaped noise using FIR filters.
     '''
-    def __init__(self, fs, level, gains, ntaps=1001, window='hanning',
+    def __init__(self, fs, level, gains, ntaps=1001, window='hann',
                  polarity=1, seed=None, calibration=None):
         vars(self).update(locals())
 
@@ -682,7 +682,7 @@ class ShapedNoiseFactory(Carrier):
         return waveform * self.polarity
 
 
-def shaped_noise(fs, level, gains, duration, ntaps=10001, window='hanning',
+def shaped_noise(fs, level, gains, duration, ntaps=10001, window='hann',
                  polarity=1, seed=1, calibration=None):
     '''
     Generate shaped noise using `scipy.signal.firwin2`.
@@ -733,7 +733,7 @@ class ShapedNoiseFactory(Carrier):
     '''
     Factory for generating continuous shaped noise using FIR filters.
     '''
-    def __init__(self, fs, level, gains, ntaps=1001, window='hanning',
+    def __init__(self, fs, level, gains, ntaps=1001, window='hann',
                  polarity=1, seed=None, calibration=None):
         vars(self).update(locals())
 
@@ -765,7 +765,7 @@ class ShapedNoiseFactory(Carrier):
         return waveform * self.polarity
 
 
-def shaped_noise(fs, level, gains, duration, ntaps=10001, window='hanning',
+def shaped_noise(fs, level, gains, duration, ntaps=10001, window='hann',
                  polarity=1, seed=1, calibration=None):
     '''
     Generate shaped noise using `scipy.signal.firwin2`.
