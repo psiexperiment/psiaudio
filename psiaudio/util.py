@@ -324,8 +324,8 @@ def spectrum_to_band_level(spectrum_db, n):
 
     Parameters
     ----------
-    band_db : float
-        Band level in dB re. reference (e.g., dB SPL).
+    spectrum_db : float
+        Spectrum level in dB re. reference (e.g., dB SPL).
     n : int
         Number of bands. If you are trying to compare this to an FFT with 1 Hz
         resolution, this is equal to the bandwidth (in Hz). If you are
@@ -334,8 +334,8 @@ def spectrum_to_band_level(spectrum_db, n):
 
     Returns
     -------
-    spectrum_db : float
-        Spectrum level in same units as band level.
+    band_db : float
+        Band level in same units as spectrum level.
     '''
     return spectrum_db + 10 * np.log10(n)
 
@@ -914,11 +914,15 @@ def epochs(x, pad=0):
 def smooth_epochs(epochs):
     '''
     Given a 2D array of epochs in the format [[start time, end time], ...],
-    identify and remove all overlapping epochs such that::
+    identify and remove all overlapping epochs such that:
+
         [ epoch   ]        [ epoch ]
             [ epoch ]
-    Will become::
+
+    Will become:
+
         [ epoch     ]      [ epoch ]
+
     Epochs do not need to be ordered when provided; however, they will be
     returned ordered.
     '''
@@ -991,17 +995,18 @@ def int_to_TTL(a, width):
     represented as a single bit (0 or 1), it is wasteful to cast the TTL to an
     int32 before storing the data in a buffer.  `FromBits` combines up to 6 TTL
     channels into a single int32 word.  Since only the first 6 bits are used to
-    store the 6 TTL channels, the data can be reduced further.
+    store the 6 TTL channels, the data can be reduced further:
+
     1. Using `ShufTo8`, 24 TTL channels can be stored in a single index of a
-    serial buffer.
+       serial buffer.
     2. Using `CompTo8`, 4 consecutive samples of data from 6 TTL channels can be
-    stored in a single index of a serial buffer.
+       stored in a single index of a serial buffer.
     3. Combining `ShufTo16` and `CompTo16`, store 2 consecutive samples of data
-    from 12 TTL channels in a single index of a serial buffer.
-    Using this approach, the memory overhead and amount of data being
-    transferred has been reduced by a factor of 24.
-    This function uses Numpy's bitshift and bitmask operators, so the algorithm
-    should be pretty efficient.
+       from 12 TTL channels in a single index of a serial buffer. Using this
+       approach, the memory overhead and amount of data being transferred has
+       been reduced by a factor of 24.  This function uses Numpy's bitshift and
+       bitmask operators, so the algorithm should be pretty efficient.
+
     Parameters
     ==========
     a : array_like
@@ -1009,12 +1014,13 @@ def int_to_TTL(a, width):
         The dtype (either int8, int16 or int32) of the array is used to figure
         out the size of the second dimension.  This will depend on your
         combination of `FromBits` and the shuffle/compression components.
+
     Returns
     =======
     bitfield : array
         2D boolean array repesenting the bits in little-endian order
 
-    Example (note the transpose -- didn't have time to flip around)
+    Example
     =======
     >>> int_to_TTL([4, 8, 5], width=6).T
     array([[False, False,  True, False, False, False],

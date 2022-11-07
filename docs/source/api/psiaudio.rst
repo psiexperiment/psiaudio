@@ -9,7 +9,6 @@ Submodules
    :caption: API:
    :hidden:
 
-   psiaudio.api
    psiaudio.calibration
    psiaudio.pipeline
    psiaudio.queue
