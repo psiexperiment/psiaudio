@@ -138,8 +138,9 @@ def test_negative_s0():
     d = np.random.uniform(size=100000)
     data = pipeline.PipelineData(d, 100e3, metadata=md, s0=-64)
     assert data[::8].s0 == -64
-    print(data)
-    assert False
+    assert data[64:].s0 == 0
+    assert data[32:].s0 == -32
+
 
 def test_pipeline_data_1d(data1d):
     fs = data1d.fs
