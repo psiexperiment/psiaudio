@@ -72,8 +72,18 @@ def test_flat_calibration():
         114: 10.0,
     }
     for level, expected_rms in tests.items():
-        assert pytest.approx(expected_rms, rel=1e-2) == \
-            calibration.get_sf(1e3, level)
+        sf = calibration.get_sf(1e3, level)
+        assert isinstance(sf, float)
+        assert pytest.approx(expected_rms, rel=1e-2) == sf
+
+        # Also, verify that we are properly returning a numpy array if we pass
+        # in a list of frequencies. This ensures compatibility with downstream
+        # code that does not care whether they are using an interp or flat
+        # calibration.
+        sf = calibration.get_sf([1e3, 2e3], level)
+        assert sf.shape == (2,)
+        np.testing.assert_allclose(sf, expected_rms, rtol=1e-2)
+
 
 
 def test_flat_calibration_from_spl():
