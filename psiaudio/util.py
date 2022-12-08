@@ -18,7 +18,8 @@ def as_numeric(x):
 def db(target, reference=1):
     target = as_numeric(target)
     reference = as_numeric(reference)
-    return 20*np.log10(target/reference)
+    with np.errstate(divide='ignore'):
+        return 20*np.log10(target/reference)
 
 
 def dbi(db, reference=1):
@@ -362,10 +363,10 @@ def band_to_spectrum_level(band_db, n):
     return band_db - 10 * np.log10(n)
 
 
-def rms(s, detrend=False):
+def rms(s, detrend=False, axis=-1):
     if detrend:
-        s = signal.detrend(s, axis=-1)
-    return np.mean(s**2, axis=-1)**0.5
+        s = signal.detrend(s, axis=axis)
+    return np.mean(s**2, axis=axis)**0.5
 
 
 def rms_rfft(x):
