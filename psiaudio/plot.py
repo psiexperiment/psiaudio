@@ -43,6 +43,10 @@ class OctaveLocator(mticker.Locator):
         return self.tick_values(*bounds) / self.conv
 
     def tick_values(self, vmin, vmax):
+        if vmin < 0:
+            # This is usually the case when some padding has been added to the
+            # axes even if the data is only positive values.
+            vmin = self.axis.get_minpos()
         return octave_space(vmin, vmax, self.octaves, self.mode)
 
 
