@@ -560,19 +560,22 @@ class BandlimitedFIRNoiseFactory(Carrier):
     gains).
     '''
     def __init__(self, fs, fl, fh, level, ntaps=1001, window='hann',
-                 polarity=1, seed=None, equalize=True, calibration=None):
+                 polarity=1, seed=None, equalize=False, calibration=None):
         vars(self).update(locals())
 
-        #TODO: Implement eq logic.
-
         if calibration is None:
-            raise NotImplemented('Not implemented for uncalibrated noise')
+            raise NotImplemented
 
         # Calculate the gains for the shaped noise
-        freq = np.arange(fl, fh + 1)
-        #spectrum_level = util.band_to_spectrum_level(level, fl, fh)
-        sf = calibration.get_sf(freq, level)
-        freq = np.concatenate(([0, fl / 1.01], freq, [fh * 1.01, fs / 2]))
+        if equalize:
+            freq = np.arange(fl, fh + 1)
+            sf = calibration.get_sf(freq, level)
+        else:
+            freq = np.array([fl, fh])
+            sf = calibration.get_mean_sf(fl, fh, level)
+            sf = np.full_like(freq, fill_value=sf)
+
+        freq = np.concatenate(([0, fl / 1.1], freq, [fh * 1.1, fs / 2]))
         sf = np.pad(sf, 2)
 
         self.taps = signal.firwin2(ntaps, freq=freq, gain=sf, window=window, fs=fs)
@@ -598,7 +601,7 @@ class BandlimitedFIRNoiseFactory(Carrier):
 
 def bandlimited_fir_noise(fs, level, fl, fh, duration, ntaps=10001,
                           window='hann', polarity=1, seed=1,
-                          calibration=None):
+                          calibration=None, equalize=True):
     '''
     Generate shaped noise using `scipy.signal.firwin2`.
 
@@ -1041,8 +1044,7 @@ def chirp(fs, start_frequency, end_frequency, duration, level,
         sf = level
     else:
         if not equalize:
-            sf = util.dbi(util.db(calibration.get_sf(ifreq, level)).mean())
-            #sf = calibration.get_sf(ifreq, level).mean()
+            sf = calibration.get_mean_sf(start_frequency, end_frequency, level)
         else:
             sf = calibration.get_sf(ifreq, level)
 
