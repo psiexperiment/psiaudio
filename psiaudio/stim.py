@@ -301,6 +301,9 @@ class Cos2EnvelopeFactory(EnvelopeFactory):
         super().__init__('cosine-squared', fs, duration, rise_time,
                          input_factory, start_time)
 
+    def max_amplitude(self):
+        return self.input_factory.max_amplitude()
+
 
 ################################################################################
 # SAM envelope
@@ -586,7 +589,11 @@ class BandlimitedFIRNoiseFactory(Carrier):
         # multiplying by the scaling factors, we can ensure that the noise is
         # initially generated with the desired RMS.
         self.scale = np.sqrt(3)
+
         self.reset()
+
+    def max_amplitude(self):
+        return np.abs(self.taps).sum()
 
     def reset(self):
         self.zi = self.initial_zi
@@ -992,6 +999,9 @@ class RepeatFactory(FixedWaveform):
         self.waveform = repeat(waveform, self.fs, self.n, self.skip_n,
                                self.rate, self.delay)
 
+    def max_amplitude(self):
+        return self.input_factory.max_amplitude()
+
 
 def repeat(waveform, fs, n, skip_n, rate, delay):
     s_period = int(round(fs / rate))
@@ -1065,6 +1075,9 @@ class ChirpFactory(FixedWaveform):
         vars(self).update(kwargs)
         self.waveform = chirp(**kwargs)
         self.reset()
+
+    def max_amplitude(self):
+        return np.abs(self.waveform).max()
 
 
 ################################################################################
