@@ -763,7 +763,7 @@ def resample_poly(waveform, fs, target_fs):
     return signal.resample_poly(waveform, up, down, axis=-1)
 
 
-def psd_bootstrap(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None):
+def psd_bootstrap_vec(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None):
     '''
     Calculate the normalized PSD across trials using a boostrapping algorithm
 
@@ -816,6 +816,73 @@ def psd_bootstrap(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None):
 
     psd_nf = mean_psd_bs_rand.mean(axis=0)
     psd = mean_psd_bs.mean(axis=0)
+    psd_norm = psd - psd_nf
+
+    return pd.DataFrame({
+            'psd_nf': psd_nf,
+            'psd': psd,
+            'psd_norm': psd_norm,
+            'plv': plv,
+        },
+        index=pd.Index(psd_freq(x, fs), name='frequency'),
+    )
+
+
+def psd_bootstrap_loop(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None):
+    '''
+    Calculate the normalized PSD across trials using a boostrapping algorithm
+
+    To estmate the noise floor, the CSD of each trial is computed and then the
+    phases of the CSD are randomized.
+
+    Parameters
+    ----------
+    x : array
+        Signal to compute PSD noise floor over. Must be trial x time.
+    fs : float
+        Sampling rate of signal
+    n_draw : int
+        Number of trials to draw on each bootstrap cycle.
+    n_bootstrap : int
+        Number of bootstrap cycles.
+    rng : instance of RandomState
+        If provided, this will be used to drive the bootstrapping algorithm.
+        Useful when you need to "freeze" results (e.g., for publication).
+    window : {None, string}
+        Type of window to use when calculating bootstrapped PSD.
+
+    Result
+    ------
+    psd_bs : DataFrame
+        Pandas DataFrame indexed by frequency. Columns include `psd_nf`, the
+        noise floor as estimated by the bootstrapping algorithm.
+
+    Notes
+    -----
+    TODO: Add citation (Bharadwaj).
+    '''
+    if rng is None:
+        rng = np.random.RandomState()
+
+    c = csd(x, window=window)
+    i = np.arange(len(c))
+
+    mean_psd_bs = []
+    mean_psd_bs_rand = []
+    plv_bs = []
+
+    for b in range(n_bootstrap):
+        c_bs = c[rng.choice(i, n_draw)]
+        random_phases = rng.uniform(0, 2 * np.pi, size=c_bs.shape)
+        c_bs_rand = np.abs(c_bs) * np.exp(-1j * random_phases)
+        mean_psd_bs.append(db(np.abs(c_bs.mean(axis=0))))
+        mean_psd_bs_rand.append(db(np.abs(c_bs_rand.mean(axis=0))))
+        angle_bs = np.angle(c_bs)
+        plv_bs.append(np.abs(np.mean(np.exp(-1j*angle_bs), axis=0)))
+
+    plv = np.mean(plv_bs, axis=0)
+    psd_nf = np.mean(mean_psd_bs_rand, axis=0)
+    psd = np.mean(mean_psd_bs, axis=0)
     psd_norm = psd - psd_nf
 
     return pd.DataFrame({
