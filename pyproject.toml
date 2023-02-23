@@ -1,6 +1,7 @@
 [project]
 name = "psiaudio"
 description = "Audio tools supporting psiexperiment"
+readme = "README.md"
 requires-python = ">=3.7"
 license = {file = "license.txt"}
 authors = [

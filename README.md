@@ -5,7 +5,7 @@ Tools for auditory signal generation and processing. Provides:
 * Finite and infinite signal generation support
 * Calibration
 * Data processing pipelines using coroutines
-
+* Basic utility functions common to auditory processing
 
 # Contributors and Acknowledgements
 
