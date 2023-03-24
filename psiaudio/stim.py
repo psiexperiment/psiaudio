@@ -1183,7 +1183,7 @@ def load_wav(fs, filename, level=None, calibration=None, normalization=None):
         waveform = (waveform - ii.min) / (ii.max - ii.min) * 2 - 1
 
     if normalization is None:
-        continue
+        pass
     elif normalization == 'pe':
         waveform = waveform / waveform.max()
     elif normalization == 'rms':
