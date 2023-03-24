@@ -1148,7 +1148,7 @@ class BandlimitedClickFactory(FixedWaveform):
 # Wavfiles
 ################################################################################
 @fast_cache
-def load_wav(fs, filename, level, calibration, normalization='pe'):
+def load_wav(fs, filename, level=None, calibration=None, normalization=None):
     '''
     Load wav file, scale, and resample
 
@@ -1160,28 +1160,31 @@ def load_wav(fs, filename, level, calibration, normalization='pe'):
         FFT-based resampling algorithm.
     filename : {str, Path}
         Path to wav file
-    level : float
+    level : {None, float}
         Level to present wav files at. If normalization is `'pe'`, level will
         be in units of peSPL (assuming calibration is in units of SPL). If
         normalization is in `'rms'`, level will be dB SPL RMS.
-    calibration : instance of Calibration
+    calibration : {None, Calibration}
         Used to scale waveform to appropriate peSPL. If not provided,
         waveform is not scaled.
-    normalization : {'pe', 'rms'}
-        Method for rescaling waveform. If `'pe'`, rescales to peak-equivalent
-        so the max value of the waveform matches the target level. If `'rms'`,
-        rescales so that the RMS value of the waveform matches the target
-        level.
+    normalization : {None, 'pe', 'rms'}
+        Method for rescaling waveform. If None, no rescaling is done. If
+        `'pe'`, rescales to peak-equivalent so the max value of the waveform
+        matches the target level. If `'rms'`, rescales so that the RMS value of
+        the waveform matches the target level.
     '''
     log.warning('Loading %s', filename)
     file_fs, waveform = wavfile.read(filename, mmap=True)
+
     # Rescale to range -1.0 to 1.0
     if waveform.dtype != np.float32:
         ii = np.iinfo(waveform.dtype)
         waveform = waveform.astype(np.float32)
         waveform = (waveform - ii.min) / (ii.max - ii.min) * 2 - 1
 
-    if normalization == 'pe':
+    if normalization is None:
+        continue
+    elif normalization == 'pe':
         waveform = waveform / waveform.max()
     elif normalization == 'rms':
         waveform = waveform / util.rms(waveform)
