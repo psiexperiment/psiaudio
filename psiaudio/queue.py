@@ -76,6 +76,9 @@ class AbstractSignalQueue:
         # need to pause stimulus generation.
         self._generated = []
 
+    def clone(self):
+        return copy.deepcopy(self)
+
     @property
     def fs(self):
         return self._fs
