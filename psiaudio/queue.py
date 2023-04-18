@@ -57,6 +57,7 @@ class AbstractSignalQueue:
             'added': [],
             'removed': [],
             'decrement': [],
+            'empty': [],
         }
 
         # Is stimulus generation paused?
@@ -406,6 +407,7 @@ class AbstractSignalQueue:
                 log.info('Queue is empty')
                 waveform = np.zeros(samples)
                 self._empty = True
+                self._notify('empty', {})
             samples -= len(waveform)
             self._samples += len(waveform)
             waveforms.append(waveform)

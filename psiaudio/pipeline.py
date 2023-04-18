@@ -3,6 +3,7 @@ log = logging.getLogger(__name__)
 
 from collections import deque
 from copy import copy
+from threading import Event
 
 import numpy as np
 import pandas as pd
@@ -613,7 +614,7 @@ def capture_epoch(epoch_s0, epoch_samples, info, target, fs=None,
 @coroutine
 def extract_epochs(fs, queue, epoch_size, target, buffer_size=0,
                    empty_queue_cb=None, removed_queue=None, prestim_time=0,
-                   poststim_time=0):
+                   poststim_time=0, source_complete=None):
     '''
     Coroutine to facilitate extracting epochs from an incoming stream of data
 
@@ -654,6 +655,11 @@ def extract_epochs(fs, queue, epoch_size, target, buffer_size=0,
     poststim_time : float
         Additional time to capture beyond the specified epoch size (or
         `duration`).
+    source_complete : {None, Event}
+        If None, assume that once there are no more epochs to extract and call
+        the empty_queue_cb notification. If an Event, the empty_queue_cb
+        notification will be fired once the Event is set and there are no more
+        epochs to extract.
     '''
     # The variable `tlb` tracks the number of samples that have been acquired
     # and reflects the lower bound of `data`. For example, if we have acquired
@@ -680,6 +686,15 @@ def extract_epochs(fs, queue, epoch_size, target, buffer_size=0,
     # 80 per second), I find it best to accumulate as many epochs as possible before
     # calling the next target. This list will maintain the accumulated set.
     epochs = []
+
+    # Create dummy event and auto-set it to generate old behavior (where we
+    # call the queue_complete_cb as soon as we have no more epochs to capture).
+    # The problem with this old behavior si that if there is a long interval in
+    # between stimuli, the next epoch may not be generated until all pending
+    # epochs have been captured.
+    if source_complete is None:
+        source_complete = Event()
+        source_complete.set()
 
     # This is used for communicating events
     if removed_queue is None:
@@ -782,7 +797,9 @@ def extract_epochs(fs, queue, epoch_size, target, buffer_size=0,
             else:
                 break
 
-        if not (queue or epoch_coroutines) and empty_queue_cb:
+        if source_complete.is_set() \
+                and not (queue or epoch_coroutines) \
+                and empty_queue_cb:
             # If queue and epoch coroutines are complete, call queue callback
             # once and only once.
             empty_queue_cb()
