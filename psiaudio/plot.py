@@ -52,13 +52,16 @@ class OctaveLocator(mticker.Locator):
 
 class OctaveFormatter(mticker.Formatter):
 
-    def __init__(self, data_si='', label_si='k'):
+    def __init__(self, data_si='', label_si='k', precision=None):
         self.conv = UNIT_CONVERSION[data_si, label_si]
+        if precision is None:
+            precision = 0 if label_si == '' else 1
+        self.precision = precision
 
     def __call__(self, x, pos=None):
         label_x = x * self.conv
         if label_x >= 1:
-            label_x = round(label_x)
+            label_x = round(label_x, self.precision)
         return f'{label_x}'
 
 
@@ -66,12 +69,14 @@ class OctaveScale(mscale.ScaleBase):
 
     name = 'octave'
 
-    def __init__(self, axis, *, octaves=1, mode='nearest', data_si='', label_si='k'):
+    def __init__(self, axis, *, octaves=1, mode='nearest', data_si='',
+                 label_si='k', precision=None):
         super().__init__(axis)
         self.octaves = octaves
         self.mode = mode
         self.data_si = data_si
         self.label_si = label_si
+        self.precision = precision
 
     def get_transform(self):
         return mscale.LogTransform(2)
@@ -79,7 +84,7 @@ class OctaveScale(mscale.ScaleBase):
     def set_default_locators_and_formatters(self, axis):
         axis.set_major_locator(OctaveLocator(self.octaves, self.data_si,
                                              self.label_si, self.mode))
-        axis.set_major_formatter(OctaveFormatter(self.data_si, self.label_si))
+        axis.set_major_formatter(OctaveFormatter(self.data_si, self.label_si, self.precision))
         axis.set_minor_locator(mticker.NullLocator())
         axis.set_minor_formatter(mticker.NullFormatter())
 
@@ -92,7 +97,14 @@ mscale.register_scale(OctaveScale)
 
 
 def waterfall_plot(axes, waveforms, waterfall_level='level',
-                   scale_method='mean', plotkw=None, x_transform=None):
+                   scale_method='mean', base_scale_multiplier=1, plotkw=None,
+                   x_transform=None):
+    '''
+    Parameters
+    ----------
+    axes : matplotlib Axes instance
+        Axes to plot on
+    '''
     if x_transform is None:
         x_transform = lambda x: x
     levels = waveforms.index.get_level_values(waterfall_level)
@@ -107,9 +119,9 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
     limits = [(w.min(), w.max()) for w in waveforms]
 
     if scale_method == 'mean':
-        base_scale = np.mean(np.abs(np.array(limits)))
+        base_scale = np.mean(np.abs(np.array(limits))) * base_scale_multiplier
     elif scale_method == 'max':
-        base_scale = np.max(np.abs(np.array(limits)))
+        base_scale = np.max(np.abs(np.array(limits))) * base_scale_multiplier
     else:
         raise ValueError(f'Unsupported scale_method "{scale_method}"')
 
