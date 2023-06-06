@@ -178,6 +178,9 @@ class GateFactory(Modulator):
         self.offset += samples
         return token
 
+    def max_amplitude(self):
+        return self.input_factory.max_amplitude()
+
 
 ################################################################################
 # Gated envelopes
@@ -389,6 +392,9 @@ class SquareWaveEnvelopeFactory(Modulator):
     def env(self, samples):
         return square_wave(self.fs, self.offset, samples, self.depth, self.fm,
                            self.duty_cycle)
+
+    def max_amplitude(self):
+        return self.input_factory.max_amplitude()
 
 
 ################################################################################
@@ -850,6 +856,11 @@ class ToneFactory(Carrier):
         self.offset += samples
         return waveform
 
+    def max_amplitude(self):
+        rms = self.level if self.calibration is None \
+            else self.calibration.get_sf(self.frequency, self.level)
+        return rms * np.sqrt(2) * 1.1
+
 
 ################################################################################
 # SAMTone
@@ -929,6 +940,11 @@ class SAMToneFactory(Carrier):
         )
         self.offset += samples
         return waveform
+
+    def max_amplitude(self):
+        rms = self.level if self.calibration is None \
+            else self.calibration.get_sf(self.fc, self.level)
+        return rms * np.sqrt(2) * 1.1 * 3
 
 
 ################################################################################
