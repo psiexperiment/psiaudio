@@ -6,9 +6,11 @@ import itertools
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from scipy import signal
 from scipy.io import wavfile
 
+from . import audiograms
 from . import util
 from . import queue
 
@@ -22,6 +24,27 @@ def fast_cache(f):
             cache[key] = f(*args, **kw)
         return cache[key]
     return wrapper
+
+
+################################################################################
+# Utilities
+################################################################################
+def apply_max_correction(sf, max_correction):
+    db = util.db(sf)
+    db_mean = np.mean(db)
+    db_min = db_mean - max_correction
+    db_max = db_mean + max_correction
+    log.info('Clipping correction to range (%f, %f)', db_min, db_max)
+    return util.dbi(np.clip(db, db_min, db_max))
+
+
+def apply_audiogram_weighting(freq, sf, audiogram_weighting):
+    audiogram = pd.Series(getattr(audiograms, audiogram_weighting))
+    a_freq = audiogram.index.values
+    a_level = audiogram.values
+    a_level -= a_level.min()
+    log.info('Correcting for %s audiogram', audiogram_weighting)
+    return sf * np.interp(freq, a_freq, util.dbi(a_level))
 
 
 ################################################################################
@@ -567,9 +590,40 @@ class BandlimitedFIRNoiseFactory(Carrier):
     This is similar to shaped noise, but with simpler inputs if all you want is
     bandlimited noise (i.e., no requirement to generate the dictionary of
     gains).
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate of stimuli
+    fl : float
+        Lower frequency of noise band
+    fh : float
+        Upper frequency of noise band
+    level : float
+        Noise level
+    ntaps : int
+        Number of taps to use for FIR filter. The default generally works well.
+    window : string
+        Any valid window name offered by scipy. This is passed to firwin2.
+    polarity : int
+        Can be used to invert the polarity
+    seed : {None, int}
+        Set the seed if you want to generate frozen, reproducible noise.
+    max_correction : float
+        Maximum amount to adjust noise when equalizing based on speaker
+        calibration. Over-correcting the noise may lead to some very large
+        amplitudes and limit the range of possible stimulus levels. If noise is
+        not equalized, this setting is ignored.
+    equalize : bool
+        Equalize the noise based on the calibration to generate spectrally flat
+        noise?
+    calibration : instance of psiaudio.calibration.BaseCalibration
+        Used to generate the appropriate noise amplitude (and equalize the
+        noise if requested).
     '''
     def __init__(self, fs, fl, fh, level, ntaps=1001, window='hann',
-                 polarity=1, seed=None, equalize=False, calibration=None):
+                 polarity=1, seed=None, max_correction=20, equalize=False,
+                 calibration=None, audiogram_weighting='mouse'):
         vars(self).update(locals())
 
         if calibration is None:
@@ -583,6 +637,12 @@ class BandlimitedFIRNoiseFactory(Carrier):
             freq = np.array([fl, fh])
             sf = calibration.get_mean_sf(fl, fh, level)
             sf = np.full_like(freq, fill_value=sf)
+
+        if max_correction is not None and equalize:
+            sf = apply_max_correction(sf, max_correction)
+
+        if audiogram_weighting is not None:
+            sf = apply_audiogram_weighting(freq, sf, audiogram_weighting)
 
         freq = np.concatenate(([0, fl / 1.1], freq, [fh * 1.1, fs / 2]))
         sf = np.pad(sf, 2)
@@ -1041,7 +1101,8 @@ def repeat(waveform, fs, n, skip_n, rate, delay):
 # Chirp
 ################################################################################
 def chirp(fs, start_frequency, end_frequency, duration, level,
-          calibration=None, window='boxcar', equalize=False):
+          calibration=None, window='boxcar', equalize=False,
+          max_correction=np.inf, audiogram_weighting=None):
     '''
     Notes
     -----
@@ -1074,6 +1135,12 @@ def chirp(fs, start_frequency, end_frequency, duration, level,
         else:
             sf = calibration.get_sf(ifreq, level)
 
+    if max_correction is not None and equalize:
+        sf = apply_max_correction(sf, max_correction)
+
+    if audiogram_weighting is not None:
+        sf = apply_audiogram_weighting(ifreq, sf, audiogram_weighting)
+
     # We need to normalize the window so that it has a RMS of 1. Then, we
     # multiply by the square root of 2 since we are using the sin function
     # (e.g. Vpeak = np.sqrt(2) * Vrms). Finally, multiply by the scaling factor
@@ -1085,7 +1152,8 @@ def chirp(fs, start_frequency, end_frequency, duration, level,
 class ChirpFactory(FixedWaveform):
 
     def __init__(self, fs, start_frequency, end_frequency, duration, level,
-                 calibration, window='boxcar', equalize=False):
+                 calibration, window='boxcar', equalize=False,
+                 max_correction=np.inf, audiogram_weighting=None):
         kwargs = locals()
         kwargs.pop('self')
         vars(self).update(kwargs)
