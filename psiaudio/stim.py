@@ -34,7 +34,6 @@ def apply_max_correction(sf, max_correction):
     db_mean = np.mean(db)
     db_min = db_mean - max_correction
     db_max = db_mean + max_correction
-    log.info('Clipping correction to range (%f, %f)', db_min, db_max)
     return util.dbi(np.clip(db, db_min, db_max))
 
 
@@ -43,7 +42,6 @@ def apply_audiogram_weighting(freq, sf, audiogram_weighting):
     a_freq = audiogram.index.values
     a_level = audiogram.values
     a_level -= a_level.min()
-    log.info('Correcting for %s audiogram', audiogram_weighting)
     return sf * np.interp(freq, a_freq, util.dbi(a_level))
 
 
