@@ -1179,7 +1179,8 @@ class ClickFactory(FixedWaveform):
 # Bandlimited Click
 ################################################################################
 def bandlimited_click(fs, flb, fub, window=0.1, level=1, calibration=None,
-                      equalize=False):
+                      equalize=False, max_correction=np.inf,
+                      audiogram_weighting=None):
     '''
     Generate bandlimited click.
 
@@ -1188,30 +1189,35 @@ def bandlimited_click(fs, flb, fub, window=0.1, level=1, calibration=None,
 
     The click waveform will be symmetric around the center of the window.
     '''
-
     n_window = int(round(window * fs))
     n = int(round(fs))
     freq = np.fft.rfftfreq(n, d=1/fs)
+    log.error(freq)
     psd = np.zeros_like(freq)
     m = (freq >= flb) & (freq < fub)
-    psd[m] = 1
+    #psd[m] = 1
 
     if calibration is None:
-        if equalize:
-            raise ValueError('Cannot equalize signal without calibration')
         sf = level
     else:
-        if not equalize:
-            sf = calibration.get_sf(freq[m], level)
-            psd[m] = psd[m] * sf / sf.mean()
-        else:
-            sf = calibration.get_sf(freq[m], level)
+        band_level = util.band_to_spectrum_level(level, m.sum())
+        sf = calibration.get_sf(freq[m], band_level)
+
+    if max_correction is not None and equalize:
+        sf = apply_max_correction(sf, max_correction)
+
+    if audiogram_weighting is not None:
+        sf = apply_audiogram_weighting(freq[m], sf, audiogram_weighting)
+
+    #if equalize:
+    #    psd[m] = psd[m] * sf / sf.mean()
+    psd[m] = sf
 
     sf = util.dbi(util.db(sf).mean())
 
     csd = psd * np.exp(-1j * freq * 2 * np.pi * 0.5)
     waveform = util.csd_to_signal(csd)
-    waveform = waveform / waveform.ptp() * sf
+    #waveform = waveform / waveform.ptp() * sf
     lb = int(round(n / 2 - n_window / 2))
     waveform = waveform[lb:lb+n_window]
     return waveform
@@ -1219,10 +1225,13 @@ def bandlimited_click(fs, flb, fub, window=0.1, level=1, calibration=None,
 
 class BandlimitedClickFactory(FixedWaveform):
 
-    def __init__(self, fs, flb, fub, window, level, calibration):
-        vars(self).update(locals())
-        self.waveform = bandlimited_click(fs, flb, fub, window, level=level,
-                                          calibration=calibration)
+    def __init__(self, fs, flb, fub, window, level, calibration=None,
+                 equalize=False, max_correction=np.inf,
+                 audiogram_weighting=None):
+        kwargs = locals()
+        kwargs.pop('self')
+        vars(self).update(kwargs)
+        self.waveform = bandlimited_click(**kwargs)
         self.reset()
 
 
