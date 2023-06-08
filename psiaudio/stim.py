@@ -125,6 +125,9 @@ class FixedWaveform(Waveform):
     def is_complete(self):
         return self.offset >= len(self.waveform)
 
+    def max_amplitude(self):
+        return np.abs(self.waveform).max()
+
 
 class Carrier(Waveform):
     '''
@@ -1157,9 +1160,6 @@ class ChirpFactory(FixedWaveform):
         vars(self).update(kwargs)
         self.waveform = chirp(**kwargs)
         self.reset()
-
-    def max_amplitude(self):
-        return np.abs(self.waveform).max()
 
 
 ################################################################################
