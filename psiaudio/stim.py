@@ -623,8 +623,8 @@ class BandlimitedFIRNoiseFactory(Carrier):
         noise if requested).
     '''
     def __init__(self, fs, fl, fh, level, ntaps=1001, window='hann',
-                 polarity=1, seed=None, max_correction=20, equalize=False,
-                 calibration=None, audiogram_weighting='mouse'):
+                 polarity=1, seed=None, max_correction=np.inf, equalize=False,
+                 calibration=None, audiogram_weighting=None):
         vars(self).update(locals())
 
         if calibration is None:
