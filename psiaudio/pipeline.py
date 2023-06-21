@@ -618,7 +618,6 @@ def extract_epochs(fs, queue, epoch_size, target, buffer_size=0,
     '''
     Coroutine to facilitate extracting epochs from an incoming stream of data
 
-
     Parameters
     ----------
     fs : float
