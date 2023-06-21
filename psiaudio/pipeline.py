@@ -1008,7 +1008,8 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
     if isinstance(new_samples, PipelineData):
         prior_samples = PipelineData(prior_samples,
                                      s0=new_samples.s0-min_samples,
-                                     fs=new_samples.fs)
+                                     fs=new_samples.fs,
+                                     channel=new_samples.channel[0])
         s0 = prior_samples.s0
         fs = prior_samples.fs
     else:
