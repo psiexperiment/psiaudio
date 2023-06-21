@@ -288,7 +288,7 @@ def concat(arrays, axis=-1):
         channel = base_arr.channel
         for a in arrays[1:]:
             if a.channel != channel:
-                raise ValueError('Cannot concatenate inputs with different channel')
+                raise ValueError(f'Cannot concatenate inputs with different channels. Expected {channel}, found {a.channel}.')
     else:
         channel = [c for array in arrays for c in array.channel]
 
