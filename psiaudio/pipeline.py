@@ -1008,7 +1008,8 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
         prior_samples = PipelineData(prior_samples,
                                      s0=new_samples.s0-min_samples,
                                      fs=new_samples.fs,
-                                     channel=new_samples.channel[0])
+                                     channel=new_samples.channel[0],
+                                     metadata=new_samples.metadata)
         s0 = prior_samples.s0
         fs = prior_samples.fs
     else:
@@ -1060,7 +1061,7 @@ def average(n, target):
 
 
 @coroutine
-def auto_th(n, baseline, target, fs='auto'):
+def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None):
     '''
     Automatically determine threshold based on input data standard deviation
 
@@ -1075,6 +1076,12 @@ def auto_th(n, baseline, target, fs='auto'):
         Sampling rate of data. If `'auto'`, this coroutine must be part of a
         pipeline that is processing `PipelineData` as `fs` will be derived from
         the first `PipelineData` segment.
+    mode : {'positive', 'negative', 'both'}
+        Whether to detect positive (i.e., x >= th), negative (i.e., x <= th),
+        or both (i.e., x >= th or x <= th) deflections.
+    auto_th_cb : {callable, None}
+        If a callable is provided, this will be called with a single argument
+        (the calculated auto-threshold).
 
     Once the threshold has been determined, the portion of the input data
     collected for determining the threshold will then be thresholded and passed
@@ -1098,11 +1105,22 @@ def auto_th(n, baseline, target, fs='auto'):
 
     th = np.std(d) * n
     log.info('auto_th set to %f', th)
+    if auto_th_cb is not None:
+        auto_th_cb(th)
 
     # Immediately send the data accumulated for the baseline (plus any extra
     # data that was captured), then wait for the next chunk of data.
     while True:
-        target(data >= th)
+        if mode == 'positive':
+            d = data >= th
+        elif mode == 'negative':
+            d = data <= -th
+        elif mode == 'both':
+            d = (data >= th) | (data <= -th)
+        else:
+            raise ValueError(f'Unsupported mode: "{mode}"')
+        d.metadata['auto_th'] = th
+        target(d)
         data = (yield)
 
 
