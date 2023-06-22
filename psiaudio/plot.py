@@ -11,12 +11,14 @@ SI unit is in kHz even if the data SI unit is in Hz:
 
 
 '''
-from psiaudio.util import octave_space
+import importlib
 from matplotlib import ticker as mticker
 from matplotlib import scale as mscale
 from matplotlib import transforms as T
 import numpy as np
 import pandas as pd
+
+from psiaudio.util import octave_space
 
 # Factor to multiply tick location by to transform from data SI prefix to label
 # SI prefix.
@@ -165,3 +167,72 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
     axes.grid()
     for spine in ('top', 'left', 'right'):
         axes.spines[spine].set_visible(False)
+
+
+def get_color_cycle(n, name='palettable.matplotlib.Viridis_20_r', fmt='matplotlib'):
+    '''
+    Return an iterator over the specified palettable color scheme that returns
+    colors that can be use for plotting.
+
+    Parameters
+    ----------
+    n : int
+        Number of colors needed.
+    name : string
+        Name of fully qualified palettable color map (e.g.,
+        palettable.matplotlib.Viridis_20_r). The number does not actually for
+        continuous scales since we will be interpolating.
+    fmt: {'matplotlib'}
+        Format to return colors in. Select the version that is compatible with
+        the plotting library you are using so you can pass the colors in
+        directly to plot function.
+
+    Returns
+    -------
+    iterator:
+        Iterator that yields a color in the requested format.
+    '''
+    module_name, cmap_name = name.rsplit('.', 1)
+    module = importlib.import_module(module_name)
+
+    formatters = {
+        'matplotlib': lambda x: x,
+        'pyqtgraph': lambda x: tuple(int(v * 255) for v in x),
+    }
+
+    # This generates a LinearSegmetnedColormap instance that interpolates to
+    # the requested number of colors. We can then extract these colors by
+    # calling the colormap with a mapping of 0 ... 1 where the number of values
+    # in the array is the number of colors we need (spaced equally along 0 ...
+    # 1).
+
+    formatter = formatters[fmt]
+    cmap = getattr(module, cmap_name).mpl_colormap.resampled(n)
+    for i in np.linspace(0, 1, n):
+        yield formatter(cmap(i))
+
+
+def iter_colors(x, *args, **kw):
+    '''
+    Like enumerate, but yields colors instead of count.
+
+    This only works if the length of the iterable can be determined in advance.
+    Pass in as `list(generator)` if you are using generators.
+
+    Parameters
+    ----------
+    x : iterable
+
+    Additional arguments are passed to `get_color_cycle`.
+
+    Returns
+    -------
+    iterator :
+        An iterable object. The __next__ method of the iterator returns a tuple
+        containing a color and the value obtained from iterating over iterable.
+
+    '''
+    n = len(x)
+    c_iter = get_color_cycle(n, *args, **kw)
+    for c, v in zip(c_iter, x):
+        yield c, v
