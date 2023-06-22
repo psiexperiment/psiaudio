@@ -117,7 +117,7 @@ def phase(s, fs, window=None, waveform_averages=None, unwrap=True):
     return _phase(c, unwrap)
 
 
-def psd(s, fs, window=None, waveform_averages=None, trim_samples=True):
+def psd(s, fs, window=None, waveform_averages=None, trim_samples=True, **kw):
     s = np.asarray(s)
     if waveform_averages is None:
         waveform_averages = 1
@@ -126,7 +126,7 @@ def psd(s, fs, window=None, waveform_averages=None, trim_samples=True):
         s = s[..., :n]
     new_shape = s.shape[:-1] + (waveform_averages, -1)
     s = s.reshape(new_shape)
-    c = csd(s, window=window)
+    c = csd(s, window=window, **kw)
     return np.abs(c).mean(axis=-2)
 
 
