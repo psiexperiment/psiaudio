@@ -317,7 +317,7 @@ class Events:
     Collection of events occuring over a given span
     '''
 
-    def __init__(self, events, start, end, fs=None):
+    def __init__(self, events, start, end, fs):
         '''
         Parameters
         ----------
@@ -1014,7 +1014,8 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
         fs = prior_samples.fs
     else:
         s0 = -min_samples
-        fs = None
+        if fs == 'auto':
+            fs = None
 
     while True:
         # Wait for new data to become available
