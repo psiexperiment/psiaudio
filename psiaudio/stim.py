@@ -1192,7 +1192,6 @@ def bandlimited_click(fs, flb, fub, window=0.1, level=1, calibration=None,
     n_window = int(round(window * fs))
     n = int(round(fs))
     freq = np.fft.rfftfreq(n, d=1/fs)
-    log.error(freq)
     psd = np.zeros_like(freq)
     m = (freq >= flb) & (freq < fub)
     #psd[m] = 1
