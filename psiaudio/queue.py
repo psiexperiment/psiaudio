@@ -465,12 +465,21 @@ class InterleavedFIFOSignalQueue(AbstractSignalQueue):
     '''
     Return waveforms based on the order they were added to the queue; however,
     trials are interleaved.
+
+    Parameters
+    ----------
+    keep_complete_waveforms : bool
+        If True, include all waveforms in the sequence even if we have acquired
+        the desired number for a given waveform. This ensures that the timing
+        between waveforms is not altered. If False, only includes waveforms
+        that we have not achieved the desired number of trials for.
     '''
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, keep_complete_waveforms=True, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._i = -1
         self._complete = False
+        self._keep_complete_waveforms = keep_complete_waveforms
 
     def next_key(self):
         if self._complete:
@@ -482,9 +491,16 @@ class InterleavedFIFOSignalQueue(AbstractSignalQueue):
         if key not in self._ordering:
             raise KeyError('{} not in queue'.format(key))
         self._data[key]['trials'] -= n
+
+        # Remove the key
+        if not self._keep_complete_waveforms \
+                and (self._data[key]['trials'] <= 0):
+            self._ordering.remove(key)
+
         for key, data in self._data.items():
             if data['trials'] > 0:
                 return False
+
         self._complete = True
         return True
 
