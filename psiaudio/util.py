@@ -889,6 +889,7 @@ def psd_bootstrap_loop(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None
             'psd_nf': psd_nf,
             'psd': psd,
             'psd_norm': psd_norm,
+            'psd_norm_linear': dbi(psd_norm),
             'plv': plv,
         },
         index=pd.Index(psd_freq(x, fs), name='frequency'),
