@@ -1178,23 +1178,52 @@ class ClickFactory(FixedWaveform):
 ################################################################################
 # Bandlimited Click
 ################################################################################
-def bandlimited_click(fs, flb, fub, window=0.1, level=1, calibration=None,
-                      equalize=False, max_correction=np.inf,
+def _click_waveform(psd, freq, n_window):
+    csd = psd * np.exp(-1j * freq * 2 * np.pi * 0.5)
+    waveform = util.csd_to_signal(csd)
+    # The click is centered
+    n = waveform.shape[-1]
+    lb = int(round(n / 2 - n_window / 2))
+    waveform = waveform[lb:lb+n_window]
+    padding = round((n_window - n) / 2)
+    if padding > 0:
+        waveform = np.pad(waveform, padding, 'constant', constant_values=0)
+    return waveform
+
+
+def bandlimited_click(fs, flb, fub, window=0.1, level=1, level_unit='rms',
+                      calibration=None, equalize=False, max_correction=np.inf,
                       audiogram_weighting=None):
     '''
     Generate bandlimited click.
 
     Parameters
     ----------
-
-    The click waveform will be symmetric around the center of the window.
+    fs : float
+        Sampling rate of waveform
+    flb : float
+        Lower frequency of click passband
+    fub : float
+        Upper frequency of click passband
+    window : float
+        Duration of window to embed click in.  The click waveform will be
+        symmetric around the center of the window.
+    level : float
+        Overall level of click. See notes regarding level calculation.
+    level_unit : {'peak', 'average'}
+        If 'peak', click level is peak power using a peak to
+        average power ratio. The min/max of the returned waveform will always
+        be identical regardless of the window.
     '''
     n_window = int(round(window * fs))
     n = int(round(fs))
+
     freq = np.fft.rfftfreq(n, d=1/fs)
     psd = np.zeros_like(freq)
     m = (freq >= flb) & (freq < fub)
-    #psd[m] = 1
+
+    if equalize and calibration is None:
+        raise ValueError('Calibration required to equalize click')
 
     if calibration is None:
         sf = level
@@ -1205,20 +1234,26 @@ def bandlimited_click(fs, flb, fub, window=0.1, level=1, calibration=None,
     if max_correction is not None and equalize:
         sf = apply_max_correction(sf, max_correction)
 
+    if not equalize:
+        sf = np.mean(sf)
+
     if audiogram_weighting is not None:
         sf = apply_audiogram_weighting(freq[m], sf, audiogram_weighting)
 
-    #if equalize:
-    #    psd[m] = psd[m] * sf / sf.mean()
     psd[m] = sf
+    waveform = _click_waveform(psd, freq, n_window)
 
-    sf = util.dbi(util.db(sf).mean())
+    if level_unit == 'peak':
+        # Convert mask to 0 and 1.
+        waveform_norm = _click_waveform(m.astype('float'), freq, n)
+        papr = waveform_norm.ptp() / util.rms(waveform_norm)
+        waveform /= papr
+        log.info('Calculated crest factor for bandlimited click is %.1f.', util.db(papr))
+    elif level_unit == 'rms':
+        pass
+    else:
+        raise ValueError('Unsupported level unit')
 
-    csd = psd * np.exp(-1j * freq * 2 * np.pi * 0.5)
-    waveform = util.csd_to_signal(csd)
-    #waveform = waveform / waveform.ptp() * sf
-    lb = int(round(n / 2 - n_window / 2))
-    waveform = waveform[lb:lb+n_window]
     return waveform
 
 
