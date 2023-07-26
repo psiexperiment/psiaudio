@@ -484,18 +484,19 @@ class InterleavedFIFOSignalQueue(AbstractSignalQueue):
     def next_key(self):
         if self._complete:
             raise QueueEmptyError
-        self._i = (self._i + 1) % len(self._ordering)
-        return self._ordering[self._i]
+        while True:
+            self._i = (self._i + 1) % len(self._ordering)
+            key = self._ordering[self._i]
+            if self._keep_complete_waveforms:
+                break
+            elif self._data[key]['trials'] > 0:
+                break
+        return key
 
     def decrement_key(self, key, n=1):
         if key not in self._ordering:
             raise KeyError('{} not in queue'.format(key))
         self._data[key]['trials'] -= n
-
-        # Remove the key
-        if not self._keep_complete_waveforms \
-                and (self._data[key]['trials'] <= 0):
-            self._ordering.remove(key)
 
         for key, data in self._data.items():
             if data['trials'] > 0:
