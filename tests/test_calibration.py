@@ -85,7 +85,6 @@ def test_flat_calibration():
         np.testing.assert_allclose(sf, expected_rms, rtol=1e-2)
 
 
-
 def test_flat_calibration_from_spl():
     calibration = FlatCalibration.from_spl(spl=80, vrms=0.1)
     tests = {
@@ -179,3 +178,8 @@ def test_phase_calculation(relative_levels, relative_phases):
     p_average = (p1 + p2) / 2
     assert calibration.get_phase(1250) == p_average
     assert calibration.get_phase(1251) != p_average
+
+
+def test_flat_calibration_to_mv_pa():
+    cal = FlatCalibration.from_mv_pa(1.85)
+    assert cal.to_mv_pa() == pytest.approx(1.85)
