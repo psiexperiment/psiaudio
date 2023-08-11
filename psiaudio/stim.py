@@ -431,8 +431,11 @@ def square_wave(fs, offset, samples, depth, fm, duty_cycle, alpha=0):
     for s in np.arange(fm_start, fm_start + samples, fm_samples):
         s = int(np.round(s))
         if s < 0:
-            n_remaining = np.clip(duty_samples + s, 0, samples)
-            env[:n_remaining] = tukey_env[-n_remaining:]
+            n_remaining = duty_samples + s
+            if n_remaining > 0:
+                i = np.clip(n_remaining, 0, samples)
+                env[:i] = tukey_env[-n_remaining:][:i]
+
         else:
             lb = np.clip(s, 0, samples)
             ub = np.clip(s + duty_samples, 0, samples)

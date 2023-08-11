@@ -21,9 +21,6 @@ tukey_window = 0.025
 
 duration = 2/fm
 
-#coerced_fc = fm * round(fc / fm)
-#coerced_duty_cycle = round(duty_cycle / fm * coerced_fc) / coerced_fc * fm
-
 factory = SquareWaveEnvelopeFactory(
     fs=fs,
     fm=fm,
@@ -40,6 +37,17 @@ factory = SquareWaveEnvelopeFactory(
     )
 )
 
-samples = factory.next(round(duration * fs))
-plt.plot(samples)
+n_samples = round(duration * 0.1 * fs)
+
+for i in range(10):
+    print(f'----- {i} -----')
+    s = factory.next(n_samples)
+    t = (n_samples * i + np.arange(n_samples)) * fs
+    plt.plot(t, s, '.-')
+
+factory.reset()
+s = factory.next(n_samples * 10)
+t = np.arange(n_samples * 10) * fs
+plt.plot(t, s, 'k-', zorder=-1)
+
 plt.show()
