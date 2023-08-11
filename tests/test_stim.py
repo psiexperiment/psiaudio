@@ -358,6 +358,8 @@ def test_sam_tone_factory(fs, stim_level, mod_fc, mod_envelope_fm,
                               n_chunks, exact=True)
 
 
+import matplotlib.pyplot as plt
+
 ################################################################################
 # Square wave envelope
 ################################################################################
@@ -366,11 +368,24 @@ def square_wave_duty_cycle(request):
     return request.param
 
 
+@pytest.fixture(scope='module', params=[0, 0.025, 0.5])
+def square_wave_alpha(request):
+    return request.param
+
+
 def test_square_wave_envelope(fs, mod_envelope_depth, mod_envelope_fm,
-                              square_wave_duty_cycle, offset=0):
+                              square_wave_duty_cycle, square_wave_alpha,
+                              offset=0):
+
+    duty_samples = int(round(fs / mod_envelope_fm * square_wave_duty_cycle))
+    w = signal.windows.tukey(duty_samples, square_wave_alpha)
+    w = w * mod_envelope_depth + (1 - mod_envelope_depth)
+    w_mean = np.mean(w)
+
     result = stim.square_wave(fs, offset, int(fs * 2), mod_envelope_depth,
-                              mod_envelope_fm, square_wave_duty_cycle)
-    expected_average = square_wave_duty_cycle + \
+                              mod_envelope_fm, square_wave_duty_cycle,
+                              square_wave_alpha)
+    expected_average = square_wave_duty_cycle * w_mean + \
         (1 - mod_envelope_depth) * (1 - square_wave_duty_cycle)
 
     # For sampling rates that are not a clean multiple of the modulation
@@ -385,13 +400,15 @@ def test_square_wave_envelope(fs, mod_envelope_depth, mod_envelope_fm,
         expected_fm = mod_envelope_fm
         expected_duty_cycle = square_wave_duty_cycle
         expected_start_jitter = pytest.approx(0, abs=0)
+        if square_wave_alpha != 0:
+            expected_average = pytest.approx(expected_average, abs=1e-14)
 
     assert np.mean(result) == expected_average
     assert np.min(result) == (1 - mod_envelope_depth)
     assert np.max(result) == 1
 
     if mod_envelope_depth != 0:
-        plateau = (result == 1).astype('i')
+        plateau = (result > (1 - mod_envelope_depth)).astype('i')
         starts = np.flatnonzero(np.diff(plateau) == 1)
         ends = np.flatnonzero(np.diff(plateau) == -1)
 
@@ -404,11 +421,22 @@ def test_square_wave_envelope(fs, mod_envelope_depth, mod_envelope_fm,
         assert (fs / starts_iti.mean()) == expected_fm
         assert (fs / ends_iti.mean()) == expected_fm
 
-        # Discard first end. Since "offset" is 0, we don't have the ability to
-        # detect the first start value.
-        ends = ends[1:]
+        # Discard first end if square_wave_alpha is 0 (i.e., perfectly
+        # rectangular envelope). Since "offset" is 0, we don't have the ability
+        # to detect the first start value.
+        if square_wave_alpha == 0:
+            ends = ends[1:]
 
         plateau_samples = (ends - starts)
+        # Verify all plateaus found are the same duration
         assert plateau_samples == pytest.approx(plateau_samples[0], abs=0)
-        duty_cycle = plateau_samples[0] / (fs / mod_envelope_fm)
+
+        plateau_samples = plateau_samples[0]
+        if square_wave_alpha != 0:
+            # Add 2 samples to correct for the fact that the Tukey window goes
+            # to 0 at the ends (thus, making the "apparent" duty cycle shorter
+            # than expected).
+            plateau_samples += 2
+
+        duty_cycle = plateau_samples / (fs / mod_envelope_fm)
         assert duty_cycle == expected_duty_cycle

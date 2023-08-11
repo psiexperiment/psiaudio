@@ -394,28 +394,63 @@ class SAMEnvelopeFactory(Modulator):
 ################################################################################
 # Square wave envelope
 ################################################################################
-def square_wave(fs, offset, samples, depth, fm, duty_cycle):
+def square_wave(fs, offset, samples, depth, fm, duty_cycle, alpha=0):
+    '''
+    Create a square wave envelope that is optionally modified as a Tukey
+    (tapered cosine) to minimize offsets.
+
+    Parameters
+    ----------
+    {fs}
+    {offset}
+    {samples}
+    depth : float
+        Modulation depth of window in range (0, 1)
+    fm : float
+        Modulation frequency
+    duty_cycle : float
+        Duty cycle of square wave (i.e., fraction of "on" portion)
+    alpha : float
+        Shape parameter of the Tukey window. See `scipy.signal.windows.tukey`
+        for more details.
+    '''
     fm_samples = fs / fm
     duty_samples = int(round(duty_cycle * fm_samples))
 
+    tukey_env = signal.windows.tukey(duty_samples, alpha) * depth + (1 - depth)
+
+    # Now, pre-fill the array with the minimum modulation depth
     env = np.full(samples, 1-depth, dtype=np.double)
+
+    # Calculate start sample of first "on" portion that we will see in the
+    # signal given the offset. We subtract offset so that `fm_start` is
+    # referenced to the beginning of the offset array.
     fm_start = fm_samples * (offset // fm_samples) - offset
-    for t in np.arange(fm_start, samples, fm_samples):
-        t = int(np.round(t))
-        lb = np.clip(t, 0, samples)
-        ub = np.clip(t + duty_samples, 0, samples)
-        env[lb:ub] = 1
+
+    # Now, stride through the array
+    for s in np.arange(fm_start, fm_start + samples, fm_samples):
+        s = int(np.round(s))
+        if s < 0:
+            n_remaining = np.clip(duty_samples + s, 0, samples)
+            env[:n_remaining] = tukey_env[-n_remaining:]
+        else:
+            lb = np.clip(s, 0, samples)
+            ub = np.clip(s + duty_samples, 0, samples)
+            env[lb:ub] = tukey_env[:ub-lb]
+
     return env
 
 
 class SquareWaveEnvelopeFactory(Modulator):
 
-    def __init__(self, fs, depth, fm, duty_cycle, calibration, input_factory):
+    def __init__(self, fs, depth, fm, duty_cycle, calibration, input_factory,
+                 alpha=0):
         vars(self).update(locals())
+        self.reset()
 
     def env(self, samples):
         return square_wave(self.fs, self.offset, samples, self.depth, self.fm,
-                           self.duty_cycle)
+                           self.duty_cycle, self.alpha)
 
     def max_amplitude(self):
         return self.input_factory.max_amplitude()
