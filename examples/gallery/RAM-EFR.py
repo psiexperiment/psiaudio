@@ -37,17 +37,16 @@ factory = SquareWaveEnvelopeFactory(
     )
 )
 
-n_samples = round(duration * 0.1 * fs)
+n_samples = round(duration * 0.025 * fs)
 
-for i in range(10):
-    print(f'----- {i} -----')
+for i in range(100):
     s = factory.next(n_samples)
     t = (n_samples * i + np.arange(n_samples)) * fs
     plt.plot(t, s, '.-')
 
 factory.reset()
-s = factory.next(n_samples * 10)
-t = np.arange(n_samples * 10) * fs
+s = factory.next(n_samples * 100)
+t = np.arange(n_samples * 100) * fs
 plt.plot(t, s, 'k-', zorder=-1)
 
 plt.show()

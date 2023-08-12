@@ -440,3 +440,23 @@ def test_square_wave_envelope(fs, mod_envelope_depth, mod_envelope_fm,
 
         duty_cycle = plateau_samples / (fs / mod_envelope_fm)
         assert duty_cycle == expected_duty_cycle
+
+
+def test_ram_efr_factory(fs, stim_level, mod_envelope_depth, mod_envelope_fm,
+                         square_wave_duty_cycle, square_wave_alpha,
+                         stim_calibration, chunksize, n_chunks):
+
+    def make_factory(fs, fc, level, calibration, **kwargs):
+        carrier = stim.ToneFactory(fs=fs, frequency=fc, level=level,
+                                   phase=-np.pi/2, calibration=calibration)
+        factory = stim.SquareWaveEnvelopeFactory(fs=fs,
+                                                 calibration=calibration,
+                                                 input_factory=carrier,
+                                                 **kwargs)
+        return factory
+
+    kwargs = dict(fs=fs, fc=8e3, level=stim_level,
+                  calibration=stim_calibration, fm=mod_envelope_fm,
+                  depth=mod_envelope_depth, duty_cycle=square_wave_duty_cycle,
+                  alpha=square_wave_alpha)
+    assert_chunked_generation(make_factory, kwargs, chunksize, n_chunks)

@@ -428,18 +428,22 @@ def square_wave(fs, offset, samples, depth, fm, duty_cycle, alpha=0):
     fm_start = fm_samples * (offset // fm_samples) - offset
 
     # Now, stride through the array
-    for s in np.arange(fm_start, fm_start + samples, fm_samples):
-        s = int(np.round(s))
+    while True:
+    #for s in np.arange(fm_start, fm_start + samples, fm_samples):
+        s = int(np.round(fm_start))
         if s < 0:
             n_remaining = duty_samples + s
             if n_remaining > 0:
                 i = np.clip(n_remaining, 0, samples)
                 env[:i] = tukey_env[-n_remaining:][:i]
-
         else:
             lb = np.clip(s, 0, samples)
             ub = np.clip(s + duty_samples, 0, samples)
             env[lb:ub] = tukey_env[:ub-lb]
+
+        fm_start += fm_samples
+        if fm_start > samples:
+            break
 
     return env
 
