@@ -823,7 +823,7 @@ def psd_bootstrap_vec(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None)
 
     Notes
     -----
-    TODO: Add citation (Bharadwaj).
+    This algorithm is adapted from Zhu et al. 2013 (JASA).
     '''
     if rng is None:
         rng = np.random.RandomState()
