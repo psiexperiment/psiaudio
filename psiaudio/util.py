@@ -9,6 +9,35 @@ import pandas as pd
 from scipy import signal
 
 
+def get_cb(cb, suffix=None):
+    '''
+    Create a function that can be called iteratively to indicate progress. Must
+    call with a number that indicates fraction to completion.
+
+    cb : {'tqdm', None}
+        If 'tqdm', creates a text-based progressbar. If None, no progress is
+        reported.
+    '''
+    # Define the callback as a no-op if not provided or sets up tqdm if requested.
+    if cb is None:
+        cb = lambda x: x
+    elif cb == 'tqdm':
+        from tqdm import tqdm
+        mesg = '{l_bar}{bar}[{elapsed}<{remaining}]'
+        if suffix is not None:
+            mesg = mesg + ' ' + suffix
+        pbar = tqdm(total=100, bar_format=mesg)
+        def cb(frac):
+            nonlocal pbar
+            frac *= 100
+            pbar.update(frac - pbar.n)
+            if frac == 100:
+                pbar.close()
+    else:
+        raise ValueError(f'Unsupported callback: {cb}')
+    return cb
+
+
 def as_numeric(x):
     if not isinstance(x, (np.ndarray, pd.DataFrame, pd.Series)):
         x = np.asanyarray(x)
