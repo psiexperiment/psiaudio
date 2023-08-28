@@ -857,8 +857,8 @@ def psd_bootstrap_vec(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None)
     )
 
 
-def psd_bootstrap_loop(x, fs, n_draw=None, n_bootstrap=100, decimate=None,
-                       rng=None, window=None, callback='tqdm', calculate=None):
+def psd_bootstrap_loop(x, fs, n_draw=None, n_bootstrap=100, rng=None,
+                       window=None, callback='tqdm', calculate=None):
     '''
     Calculate the normalized PSD across trials using a boostrapping algorithm
 
@@ -894,10 +894,6 @@ def psd_bootstrap_loop(x, fs, n_draw=None, n_bootstrap=100, decimate=None,
     '''
     if rng is None:
         rng = np.random.RandomState()
-
-    if decimate is not None:
-        x = signal.decimate(x, decimate)
-        fs = fs / decimate
 
     cb = get_cb(callback)
     c = csd(x, window=window)
@@ -935,57 +931,6 @@ def psd_bootstrap_loop(x, fs, n_draw=None, n_bootstrap=100, decimate=None,
         },
         index=pd.Index(psd_freq(x, fs), name='frequency'),
     )
-
-
-def psd_bootstrap_verhulst(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None):
-    '''
-    Calculate the normalized PSD across trials using a boostrapping algorithm
-
-    To estmate the noise floor, the CSD of each trial is computed and then the
-    phases of the CSD are randomized.
-
-    Parameters
-    ----------
-    x : array
-        Signal to compute PSD noise floor over. Must be trial x time.
-    fs : float
-        Sampling rate of signal
-    n_draw : int
-        Number of trials to draw on each bootstrap cycle.
-    n_bootstrap : int
-        Number of bootstrap cycles.
-    rng : instance of RandomState
-        If provided, this will be used to drive the bootstrapping algorithm.
-        Useful when you need to "freeze" results (e.g., for publication).
-    window : {None, string}
-        Type of window to use when calculating bootstrapped PSD.
-
-    Result
-    ------
-    psd_bs : DataFrame
-        Pandas DataFrame indexed by frequency. Columns include `psd_nf`, the
-        noise floor as estimated by the bootstrapping algorithm.
-
-    Notes
-    -----
-    TODO: Add citation (Bharadwaj).
-    '''
-    if rng is None:
-        rng = np.random.RandomState()
-
-    x = np.asarray(x)
-    i = np.arange(len(x))
-
-    psd_bs = []
-    for _ in range(n_bootstrap):
-        x_bs = x[rng.choice(i, n_draw)]
-        x_bs_mean = x_bs.mean(axis=0)
-        x_bs_psd = psd(x_bs_mean, fs=fs)
-        psd_bs.append(x_bs_psd)
-
-    psd_bs = np.vstack(psd_bs)
-    cols = pd.Index(psd_freq(x, fs), name='frequency')
-    return pd.DataFrame(psd_bs, columns=cols)
 
 
 ################################################################################
