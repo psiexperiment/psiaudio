@@ -864,7 +864,7 @@ def test_derivative(fs, data_fixture, request):
     pad_shape = ((0, 0), (1, 0)) if data_fixture == 'data2d' else (1, 0)
     padded_data = np.pad(data, pad_shape, 'constant', constant_values=0)
     expected = pipeline.PipelineData(
-        np.diff(padded_data),
+        np.diff(padded_data) / data.fs,
         s0=1,
         fs=data.fs,
         channel=data.channel,

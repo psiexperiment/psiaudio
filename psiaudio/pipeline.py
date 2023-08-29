@@ -1149,7 +1149,7 @@ def derivative(initial_state, target):
                                      metadata=new_samples.metadata)
     while True:
         samples = concat((initial_state, new_samples), axis=-1)
-        target(np.diff(samples))
+        target(np.diff(samples) * samples.fs)
         initial_state = samples[..., -1:]
         new_samples = (yield)
 
