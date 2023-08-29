@@ -843,7 +843,7 @@ def test_event_rate():
 
 
 @pytest.mark.parametrize('data_fixture', ['data1d', 'data2d'])
-def test_discard(fs, data_fixture, detrend_mode, request):
+def test_discard(fs, data_fixture, request):
     data = request.getfixturevalue(data_fixture)
 
     def cb(target):
@@ -851,6 +851,28 @@ def test_discard(fs, data_fixture, detrend_mode, request):
 
     actual = pipeline.concat(feed_pipeline(cb, data), axis=-1)
     assert_pipeline_data_equal(actual, data[..., 15:])
+
+
+@pytest.mark.parametrize('data_fixture', ['data1d', 'data2d'])
+def test_derivative(fs, data_fixture, request):
+    data = request.getfixturevalue(data_fixture)
+
+    def cb(target):
+        return pipeline.derivative(0, target)
+
+    actual = pipeline.concat(feed_pipeline(cb, data), axis=-1)
+    pad_shape = ((0, 0), (1, 0)) if data_fixture == 'data2d' else (1, 0)
+    padded_data = np.pad(data, pad_shape, 'constant', constant_values=0)
+    expected = pipeline.PipelineData(
+        np.diff(padded_data),
+        s0=1,
+        fs=data.fs,
+        channel=data.channel,
+        metadata=data.metadata,
+    )
+
+    assert_pipeline_data_equal(actual, expected)
+
 
 # TODO TEST:
 # * mc_select

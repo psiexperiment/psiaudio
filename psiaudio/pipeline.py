@@ -1125,6 +1125,35 @@ def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None):
         data = (yield)
 
 
+@coroutine
+def derivative(initial_state, target):
+    '''
+    Take the time derivative of the input. Can be used to transform a position
+    reading into velocity.
+
+    Parameters
+    ----------
+    initial_state : float
+        Initial state of the system. Required to ensure that we properly
+        calculate derivative of first time sample.
+    '''
+    new_samples = (yield)
+    initial_shape = list(new_samples.shape)
+    initial_shape[-1] = 1
+    initial_state = np.full(initial_shape, fill_value=initial_state)
+    if isinstance(new_samples, PipelineData):
+        initial_state = PipelineData(initial_state,
+                                     s0=new_samples.s0-1,
+                                     fs=new_samples.fs,
+                                     channel=new_samples.channel,
+                                     metadata=new_samples.metadata)
+    while True:
+        samples = concat((initial_state, new_samples), axis=-1)
+        target(np.diff(samples))
+        initial_state = samples[..., -1:]
+        new_samples = (yield)
+
+
 ################################################################################
 # Events data
 ################################################################################
