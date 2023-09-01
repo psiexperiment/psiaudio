@@ -36,9 +36,19 @@ def normalize_index(index, ndim):
         return tuple(slice(None) for i in range(ndim))
     if isinstance(index, (slice, int)):
         return tuple([index] + [slice(None) for i in range(ndim - 1)])
+    if isinstance(index, np.ndarray) and index.all():
+        # The numpy test routines seem to like passing in ND arrays that are
+        # all True
+        return tuple(slice(None) for i in range(ndim))
+
     # If we've made it this far, we now have an indexing tuple.
 
-    # Capture edge-case where we are dealing with `x[[n]]`.
+    # Capture edge-case where we are dealing with `x[[n]]`. First, check to see
+    # if it's an array (e.g., a boolean mask).
+    if isinstance(index, np.ndarray):
+        if index.ndim > 1:
+            raise IndexError('PipelineData does not support 2D indexing')
+        index = index.tolist()
     if isinstance(index, list):
         index = (np.s_[index],)
 
@@ -58,6 +68,8 @@ def normalize_index(index, ndim):
         elif i is Ellipsis:
             for _ in range(ndim - len(index) + 1):
                 norm_index.append(slice(None))
+        else:
+            raise ValueError('Unrecognized index type')
 
     # Tack on remaining dimensions
     for _ in range(ndim - len(norm_index)):
@@ -113,6 +125,10 @@ class PipelineData(np.ndarray):
     def __getitem__(self, s):
         obj = super().__getitem__(s)
 
+        # This is to address the `astype` which seems to call __getitem__
+        if isinstance(s, PipelineData):
+            return obj
+
         # This will be the case when s is just an integer, not a slice.
         if not hasattr(obj, 'metadata'):
             return obj
@@ -139,6 +155,9 @@ class PipelineData(np.ndarray):
             obj.s0 += time_slice
         elif time_slice is np.newaxis:
             raise IndexError('Pipeline data cannot be recast this way')
+        elif isinstance(time_slice, list):
+            if not np.all(time_slice):
+                raise ValueError('Cannot slice time using fancy indexing')
         else:
             if time_slice.start is not None:
                 if time_slice.start > 0:
@@ -168,7 +187,7 @@ class PipelineData(np.ndarray):
                 raise ValueError('Too many entries for metadata')
         elif epoch_slice is not skip:
             if isinstance(epoch_slice, list):
-                obj.metadata = [obj.metadata[s] for s in epoch_slice]
+                obj.metadata = np.array(obj.metadata)[epoch_slice].tolist()
             elif isinstance(epoch_slice, (int, slice)):
                 obj.metadata = obj.metadata[epoch_slice]
             else:
@@ -998,7 +1017,6 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
     '''
     if min_samples < 1:
         raise ValueError('min_samples must be >= 1')
-
 
     # Get timestamp of first chunk
     new_samples = (yield).astype('bool')
