@@ -10,6 +10,13 @@ class SignalBuffer:
     def __init__(self, fs, size, fill_value=np.nan, dtype=np.double,
                  n_channels=None):
         '''
+        Ringbuffer class that facilitates caching only what we need in memory
+        while making it easy to extract a time segment of interest. This was
+        written primarily for continuous plotting of data.
+
+        If the time segment includes uncached data (e.g., prior to the oldest
+        sample in the cache or after the newest sample in the cache), the
+        segment will be padded with `fill_value`.
 
         Parameters
         ----------
