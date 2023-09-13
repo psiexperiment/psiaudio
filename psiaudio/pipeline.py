@@ -1080,7 +1080,8 @@ def average(n, target):
 
 
 @coroutine
-def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None):
+def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None,
+            current_th_cb=None):
     '''
     Automatically determine threshold based on input data standard deviation
 
@@ -1101,6 +1102,9 @@ def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None):
     auto_th_cb : {callable, None}
         If a callable is provided, this will be called with a single argument
         (the calculated auto-threshold).
+    current_th_cb : {callable, None}
+        If a callable is provided, this will be used to get the current
+        threshold (which will override the automatically set threshold).
 
     Once the threshold has been determined, the portion of the input data
     collected for determining the threshold will then be thresholded and passed
@@ -1114,32 +1118,33 @@ def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None):
     baseline_samples = int(np.round(baseline * fs))
 
     # Accumulate data until we have spooled enough to do our baseline estimate.
-    # All downstream pipeline steps will appear to be unresponsive until this
-    # step completes.
+    # All pipeline steps downstream from this one will appear to be
+    # unresponsive until this step completes.
     while data.shape[-1] < baseline_samples:
         data = concat((data, (yield)), axis=-1)
 
     # Now, discard the pre-baseline samples.
-    d = data[..., :baseline_samples].view(np.ndarray)
-
-    th = np.std(d) * n
-    log.info('auto_th set to %f', th)
+    auto_th = data[..., :baseline_samples].view(np.ndarray).std() * n
+    log.info('Automatic threshold set to %f', auto_th)
     if auto_th_cb is not None:
-        auto_th_cb(th)
+        auto_th_cb(auto_th)
+
+    th = (lambda: auto_th) if current_th_cb is None else current_th_cb
+    if mode == 'positive':
+        th_cb = lambda d, th=th: d >= th()
+    elif mode == 'negative':
+        th_cb = lambda d, th=th: d <= -th()
+    elif mode == 'both':
+        th_cb = lambda d, th=th: (d >= th()) | (d <= -th())
+    else:
+        raise ValueError(f'Unsupported mode: "{mode}"')
 
     # Immediately send the data accumulated for the baseline (plus any extra
     # data that was captured), then wait for the next chunk of data.
     while True:
-        if mode == 'positive':
-            d = data >= th
-        elif mode == 'negative':
-            d = data <= -th
-        elif mode == 'both':
-            d = (data >= th) | (data <= -th)
-        else:
-            raise ValueError(f'Unsupported mode: "{mode}"')
-        d.metadata['auto_th'] = th
-        target(d)
+        if isinstance(data, PipelineData):
+            data.metadata['auto_th'] = th
+        target(th_cb(data))
         data = (yield)
 
 
