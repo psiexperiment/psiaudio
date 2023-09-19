@@ -231,6 +231,12 @@ def iter_colors(x, *args, **kw):
         An iterable object. The __next__ method of the iterator returns a tuple
         containing a color and the value obtained from iterating over iterable.
 
+    Examples
+    --------
+    Quickly generate a dictionary mapping value to color. Useful for plotting.
+
+    >>> values = [0, 10, 20, 40, 80]
+    >>> value_colors = {value: color for color, value in iter_colors(values)
     '''
     n = len(x)
     c_iter = get_color_cycle(n, *args, **kw)
