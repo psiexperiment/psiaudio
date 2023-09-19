@@ -666,6 +666,48 @@ def process_tone(fs, signal, frequency, min_snr=None, max_thd=None,
 ################################################################################
 # Octave functions (typically used for generating octave frequencies)
 ################################################################################
+def nearest_octave(x, step, si_prefix=''):
+    '''
+    Coerces x to the nearest octave step with some sensible defaults
+
+    Parameters
+    ----------
+    x : {int, float}
+        Value to coerce.
+    step : float
+        Octave step size to coerce to.
+    si_prefix {'', 'k'}
+        If '', `x` is assumed to be in Hz. If 'k', `x` is assumed to be in kHz.
+        This is important because the standard coercion algorithm will coerce
+        8000 Hz to 8192 Hz otherwise.
+
+    Examples
+    --------
+    >>> nearest_octave(45200, 0.5)
+    45255
+    >>> nearest_octave(11000, 0.5)
+    11314
+    >>> nearest_octave(8000, 0.5)
+    8000
+    >>> nearest_octave(45.2, 0.5, 'k')
+    45.255
+    >>> nearest_octave(11, 0.5, 'k')
+    11.314
+    >>> nearest_octave(8.0, 0.5, 'k')
+    8.0
+    '''
+    if si_prefix == '':
+        scale = 1e3
+    elif si_prefix == 'k':
+        scale = 1
+    else:
+        raise ValueError(f'Unrecognized si_prefix: {si_prefix}')
+    x = 2**(0.5 * np.round(np.log2(x / scale) / step)) * scale
+    if si_prefix == '':
+        x = np.round(x)
+    return x
+
+
 def octave_space(lb, ub, step, mode='nearest'):
     '''
     >>> print(octave_space(4, 32, 1.0))
@@ -760,8 +802,8 @@ def check_interleaved_octaves(freqs, min_octaves=1):
         Minimum octave spacing to enforce (this is multiplied by 0.95 to allow
         for some fudge factor if frequencies were rounded).
 
-    Notes
-    -----
+    Note
+    ----
     * If you are rounding frequencies to the nearest Hz, the actual octaves
       spacing may be slightly less or more than the desired spacing due to the
       rounding. We multiply `min_octaves` by 0.99 to allow for this small error
