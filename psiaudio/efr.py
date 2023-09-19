@@ -30,9 +30,16 @@ def efr_bs_verhulst(x, fs, fm, n_harmonics, n_bootstrap=20, n_draw=None,
 
     Result
     ------
-    psd_bs : DataFrame
-        Pandas DataFrame indexed by frequency. Columns include `psd_nf`, the
-        noise floor as estimated by the bootstrapping algorithm.
+    efr_amplitude : pd.Series
+        Pandas series indexed by bootstrap cycle. Contains EFR amplitude
+        defined as the peak to baseline amplitude.
+    harmonics : pd.DataFrame
+        Pandas DataFrame containing amplitude, noise floor, phase and
+        normalized amplitude. Indexed by harmonic and bootstrap cycle. Norm
+        amplitude is amplitude minus noise floor.
+    psd : pd.DataFrame
+        Pandas DataFrame containing the PSD of each bootstrap cycle. Columns
+        are frequency and rows are bootstrap cycle.
 
     Notes
     -----
@@ -76,7 +83,6 @@ def efr_bs_verhulst(x, fs, fm, n_harmonics, n_bootstrap=20, n_draw=None,
             'phase': np.angle(csd_bs[:, i_h]),
         })
 
-
     result = pd.concat(result, names=['harmonic', 'bootstrap'])
     result['norm_amplitude'] = result.eval('amplitude - noise_floor').clip(lower=0)
 
@@ -87,4 +93,10 @@ def efr_bs_verhulst(x, fs, fm, n_harmonics, n_bootstrap=20, n_draw=None,
     # 2 / n_time / sqrt(2). Note that n_fft = n_time / 2.
     ptp = result['norm_amplitude'] * np.exp(-1j * result['phase'])
     efr = np.abs(ptp.unstack('harmonic').sum(axis=1)) * np.sqrt(2)
-    return efr, result
+
+    psd_bs = pd.DataFrame(
+        np.abs(csd_bs),
+        index=pd.Index(range(n_bootstrap), name='bootstrap'),
+        columns=pd.Index(util.psd_freq(x, fs), name='frequency'),
+    )
+    return efr.rename('efr_amplitude'), result, psd_bs
