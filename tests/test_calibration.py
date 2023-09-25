@@ -54,6 +54,12 @@ def point_calibration(relative_levels):
     return PointCalibration.from_spl(frequencies, levels, vrms=1)
 
 
+@pytest.fixture
+def interp_calibration():
+    frequency =    np.array([500, 1000, 2000, 4000, 8000, 16000])
+    measured_SPL = np.array([ 80,   90,  100,  100,   90,    80])
+    return InterpCalibration.from_spl(frequency, measured_SPL)
+
 def test_unity_calibration():
     calibration = FlatCalibration.unity()
     assert calibration.get_sf(1000, 0) == 1
@@ -183,3 +189,10 @@ def test_phase_calculation(relative_levels, relative_phases):
 def test_flat_calibration_to_mv_pa():
     cal = FlatCalibration.from_mv_pa(1.85)
     assert cal.to_mv_pa() == pytest.approx(1.85)
+
+
+def test_interp_cal_bounds(interp_calibration):
+    assert np.isnan(interp_calibration.get_spl(50, 1))
+    assert interp_calibration.get_spl(500, 1) == 80
+    assert interp_calibration.get_spl(16000, 1) == 80
+    assert np.isnan(interp_calibration.get_spl(20000, 1))
