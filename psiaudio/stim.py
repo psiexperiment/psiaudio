@@ -10,7 +10,7 @@ import pandas as pd
 from scipy import signal
 from scipy.io import wavfile
 
-from . import audiograms
+from . import weighting
 from . import util
 from . import queue
 
@@ -37,12 +37,9 @@ def apply_max_correction(sf, max_correction):
     return util.dbi(np.clip(db, db_min, db_max))
 
 
-def apply_audiogram_weighting(freq, sf, audiogram_weighting):
-    audiogram = pd.Series(getattr(audiograms, audiogram_weighting))
-    a_freq = audiogram.index.values
-    a_level = audiogram.values
-    a_level -= a_level.min()
-    return sf * np.interp(freq, a_freq, util.dbi(a_level))
+def apply_weighting(freq, sf, weighting_type):
+    weights = weighting.load(weighting_type)
+    return sf * util.dbi(weights)
 
 
 ################################################################################
