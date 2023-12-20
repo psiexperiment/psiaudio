@@ -100,7 +100,7 @@ mscale.register_scale(OctaveScale)
 
 def waterfall_plot(axes, waveforms, waterfall_level='level',
                    scale_method='mean', base_scale_multiplier=1, plotkw=None,
-                   x_transform=None):
+                   x_transform=None, y_scale_bar_size=1):
     '''
     Parameters
     ----------
@@ -128,33 +128,45 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
         raise ValueError(f'Unsupported scale_method "{scale_method}"')
 
     if plotkw is None:
-        plotkw = {
-            'color': 'k',
-            'clip_on': False,
-        }
+        plotkw = {}
+    plotkw.setdefault('color', 'k')
+    plotkw.setdefault('clip_on', False)
 
+    # Defines the "base scale" transform that is used to adjust the overall
+    # scale of all plotted lines and widgets.
     bscale_in_box = T.Bbox([[0, -base_scale], [1, base_scale]])
     bscale_out_box = T.Bbox([[0, -1], [1, 1]])
     bscale_in = T.BboxTransformFrom(bscale_in_box)
     bscale_out = T.BboxTransformTo(bscale_out_box)
 
+    # This compresses vertically so lines tend to be plotted within the range
+    # allowed by the offset spacing. 
     tscale_in_box = T.Bbox([[0, -1], [1, 1]])
     tscale_out_box = T.Bbox([[0, 0], [1, offset_step]])
     tscale_in = T.BboxTransformFrom(tscale_in_box)
     tscale_out = T.BboxTransformTo(tscale_out_box)
 
+    if y_scale_bar_size is not None:
+        y_trans = bscale_in + bscale_out + \
+            tscale_in + tscale_out + \
+            T.Affine2D().translate(0, 1) + \
+            axes.transAxes
+
+        scale_bar_trans = T.blended_transform_factory(axes.transAxes, y_trans)
+        axes.plot([1, 1], [0, y_scale_bar_size], transform=scale_bar_trans, color='r')
+
     for i, (l, w) in enumerate(zip(levels, waveforms)):
         y_min, y_max = w.min(), w.max()
-        tnorm_in_box = T.Bbox([[0, -1], [1, 1]])
-        tnorm_out_box = T.Bbox([[0, -1], [1, 1]])
-        tnorm_in = T.BboxTransformFrom(tnorm_in_box)
-        tnorm_out = T.BboxTransformTo(tnorm_out_box)
+        #tnorm_in_box = T.Bbox([[0, -1], [1, 1]])
+        #tnorm_out_box = T.Bbox([[0, -1], [1, 1]])
+        #tnorm_in = T.BboxTransformFrom(tnorm_in_box)
+        #tnorm_out = T.BboxTransformTo(tnorm_out_box)
 
         offset = offset_step * i + offset_step * 0.5
         translate = T.Affine2D().translate(0, offset)
 
+        #Add this after bscale tnorm_in + tnorm_out + \
         y_trans = bscale_in + bscale_out + \
-            tnorm_in + tnorm_out + \
             tscale_in + tscale_out + \
             translate + axes.transAxes
         trans = T.blended_transform_factory(axes.transData, y_trans)
