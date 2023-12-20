@@ -965,9 +965,9 @@ class ToneFactory(Carrier):
 ################################################################################
 # SAMTone
 ################################################################################
-def sam_tone(fs, fc, fm, level, depth=1, phase=0, polarity=1, calibration=None,
-             samples='auto', offset=0, duration=None, eq_power=True,
-             equalize=True):
+def sam_tone(fs, fc, fm, level, depth=1, phase=0, phase_lb=0, phase_ub=0,
+             polarity=1, calibration=None, samples='auto', offset=0,
+             duration=None, eq_power=True, equalize=True):
     '''
     Generates a SAM tone
 
@@ -978,6 +978,14 @@ def sam_tone(fs, fc, fm, level, depth=1, phase=0, polarity=1, calibration=None,
 
     Parameters
     ----------
+    phase : float
+        Starting phase of carrier frequency.
+    phase_lb : float
+        Starting phase of lower sideband frequency (fc-fm). This is primarily
+        for testing and debugging purposes (modifying the starting phase of
+        phase_lb and phase_ub will affect the modulation depth).
+    phase_ub : float
+        Starting phase of upper sideband frequency (fc+fm).
     eq_power : bool
         If True, compensate for modualtion depth so the overall RMS is the same
         when varying modulation depth.  This is useful when doing AM detection
@@ -1000,9 +1008,15 @@ def sam_tone(fs, fc, fm, level, depth=1, phase=0, polarity=1, calibration=None,
     else:
         sf = level
 
+    if depth != 1:
+        raise ValueError('sam_tone currently not configured for depths != 1')
+
     sf = sf * np.array([0.25, 0.5, 0.25])
     if eq_power:
         sf /= sam_eq_power(depth)
+
+    phase = np.array([phase_lb, phase, phase_ub])
+    print(phase)
 
     if samples == 'auto':
         if duration is None:
@@ -1015,14 +1029,15 @@ def sam_tone(fs, fc, fm, level, depth=1, phase=0, polarity=1, calibration=None,
     # peak-to-peak scaling factor.
     t = (np.arange(samples, dtype=np.double) + offset)/fs
     s = polarity * sf[..., np.newaxis] * np.sqrt(2) * \
-        np.cos(2 * np.pi * t * frequencies[..., np.newaxis] + phase)
+        np.cos(2 * np.pi * t * frequencies[..., np.newaxis] + phase[..., np.newaxis])
     return np.sum(s, axis=0)
 
 
 class SAMToneFactory(Carrier):
 
-    def __init__(self, fs, fc, fm, level, depth=1, phase=0, polarity=1,
-                 eq_power=True, equalize=True, calibration=None):
+    def __init__(self, fs, fc, fm, level, depth=1, phase=0, phase_lb=0,
+                 phase_ub=0, polarity=1, eq_power=True, equalize=True,
+                 calibration=None):
         vars(self).update(locals())
         self.reset()
 
@@ -1034,7 +1049,8 @@ class SAMToneFactory(Carrier):
         # rather than cache the result.
         waveform = sam_tone(
             fs=self.fs, fc=self.fc, fm=self.fm, level=self.level,
-            depth=self.depth, phase=self.phase, polarity=self.polarity,
+            depth=self.depth, phase=self.phase, phase_lb=self.phase_lb,
+            phase_ub=self.phase_ub, polarity=self.polarity,
             eq_power=self.eq_power, equalize=self.equalize,
             calibration=self.calibration, offset=self.offset, samples=samples
         )
