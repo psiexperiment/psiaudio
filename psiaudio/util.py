@@ -174,6 +174,24 @@ def csd_df(s, fs, *args, **kw):
         return pd.DataFrame(c, columns=freqs, index=index)
 
 
+def _as_df(fn, s, fs, *args, waveform_averages=None, **kw):
+    p = fn(s, fs, *args, waveform_averages=waveform_averages, **kw)
+    n = s.shape[-1]
+    if waveform_averages is not None:
+        n = n // waveform_averages
+    freqs = pd.Index(np.fft.rfftfreq(n, 1/fs), name='frequency')
+    if p.ndim == 1:
+        name = s.name if isinstance(s, pd.Series) else fn.__name__
+        return pd.Series(p, index=freqs, name=name)
+    else:
+        index = s.index if isinstance(s, pd.DataFrame) else None
+        return pd.DataFrame(p, columns=freqs, index=index)
+
+
+def phase_df(s, fs, *args, waveform_averages=None, **kw):
+    return _as_df(phase, s, fs, *args, waveform_averages=waveform_averages, **kw)
+
+
 def psd_df(s, fs, *args, waveform_averages=None, **kw):
     '''
     Compute PSD and return as a dataframe with columns indexed by frequency
@@ -208,17 +226,7 @@ def psd_df(s, fs, *args, waveform_averages=None, **kw):
         original index of ``s`` will be preserved. If ``s`` was an array, psd
         will have a simple integer index.
     '''
-    p = psd(s, fs, *args, waveform_averages=waveform_averages, **kw)
-    n = s.shape[-1]
-    if waveform_averages is not None:
-        n = n // waveform_averages
-    freqs = pd.Index(np.fft.rfftfreq(n, 1/fs), name='frequency')
-    if p.ndim == 1:
-        name = s.name if isinstance(s, pd.Series) else 'psd'
-        return pd.Series(p, index=freqs, name=name)
-    else:
-        index = s.index if isinstance(s, pd.DataFrame) else None
-        return pd.DataFrame(p, columns=freqs, index=index)
+    return _as_df(psd, s, fs, *args, waveform_averages=waveform_averages, **kw)
 
 
 def tone_conv(s, fs, frequency, window=None):
