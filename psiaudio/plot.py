@@ -100,7 +100,7 @@ mscale.register_scale(OctaveScale)
 
 def waterfall_plot(axes, waveforms, waterfall_level='level',
                    scale_method='mean', base_scale_multiplier=1, plotkw=None,
-                   x_transform=None):
+                   x_transform=None, y_scale_bar_size=1):
     '''
     Parameters
     ----------
@@ -128,33 +128,45 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
         raise ValueError(f'Unsupported scale_method "{scale_method}"')
 
     if plotkw is None:
-        plotkw = {
-            'color': 'k',
-            'clip_on': False,
-        }
+        plotkw = {}
+    plotkw.setdefault('color', 'k')
+    plotkw.setdefault('clip_on', False)
 
+    # Defines the "base scale" transform that is used to adjust the overall
+    # scale of all plotted lines and widgets.
     bscale_in_box = T.Bbox([[0, -base_scale], [1, base_scale]])
     bscale_out_box = T.Bbox([[0, -1], [1, 1]])
     bscale_in = T.BboxTransformFrom(bscale_in_box)
     bscale_out = T.BboxTransformTo(bscale_out_box)
 
+    # This compresses vertically so lines tend to be plotted within the range
+    # allowed by the offset spacing. 
     tscale_in_box = T.Bbox([[0, -1], [1, 1]])
     tscale_out_box = T.Bbox([[0, 0], [1, offset_step]])
     tscale_in = T.BboxTransformFrom(tscale_in_box)
     tscale_out = T.BboxTransformTo(tscale_out_box)
 
+    if y_scale_bar_size is not None:
+        y_trans = bscale_in + bscale_out + \
+            tscale_in + tscale_out + \
+            T.Affine2D().translate(0, 1) + \
+            axes.transAxes
+
+        scale_bar_trans = T.blended_transform_factory(axes.transAxes, y_trans)
+        axes.plot([1, 1], [0, y_scale_bar_size], transform=scale_bar_trans, color='r')
+
     for i, (l, w) in enumerate(zip(levels, waveforms)):
         y_min, y_max = w.min(), w.max()
-        tnorm_in_box = T.Bbox([[0, -1], [1, 1]])
-        tnorm_out_box = T.Bbox([[0, -1], [1, 1]])
-        tnorm_in = T.BboxTransformFrom(tnorm_in_box)
-        tnorm_out = T.BboxTransformTo(tnorm_out_box)
+        #tnorm_in_box = T.Bbox([[0, -1], [1, 1]])
+        #tnorm_out_box = T.Bbox([[0, -1], [1, 1]])
+        #tnorm_in = T.BboxTransformFrom(tnorm_in_box)
+        #tnorm_out = T.BboxTransformTo(tnorm_out_box)
 
         offset = offset_step * i + offset_step * 0.5
         translate = T.Affine2D().translate(0, offset)
 
+        #Add this after bscale tnorm_in + tnorm_out + \
         y_trans = bscale_in + bscale_out + \
-            tnorm_in + tnorm_out + \
             tscale_in + tscale_out + \
             translate + axes.transAxes
         trans = T.blended_transform_factory(axes.transData, y_trans)
@@ -180,7 +192,7 @@ def get_color_cycle(n, name='palettable.matplotlib.Viridis_20_r', fmt='matplotli
         Number of colors needed.
     name : string
         Name of fully qualified palettable color map (e.g.,
-        palettable.matplotlib.Viridis_20_r). The number does not actually for
+        palettable.matplotlib.Viridis_20_r). The number does not matter for
         continuous scales since we will be interpolating.
     fmt: {'matplotlib'}
         Format to return colors in. Select the version that is compatible with
@@ -200,16 +212,26 @@ def get_color_cycle(n, name='palettable.matplotlib.Viridis_20_r', fmt='matplotli
         'pyqtgraph': lambda x: tuple(int(v * 255) for v in x),
     }
 
-    # This generates a LinearSegmetnedColormap instance that interpolates to
+    # This generates a LinearSegmentedColormap instance that interpolates to
     # the requested number of colors. We can then extract these colors by
     # calling the colormap with a mapping of 0 ... 1 where the number of values
     # in the array is the number of colors we need (spaced equally along 0 ...
     # 1).
 
     formatter = formatters[fmt]
-    cmap = getattr(module, cmap_name).mpl_colormap.resampled(n)
-    for i in np.linspace(0, 1, n):
-        yield formatter(cmap(i))
+    cmap = getattr(module, cmap_name)
+    if cmap.type == 'qualitative':
+        # For qualitative color maps, don't do any interpoloation because
+        # they're not really designed for that.
+        if len(cmap.mpl_colors) < n:
+            raise ValueError('Not enough colors available')
+        for i in range(n):
+            yield cmap.mpl_colors[i]
+    else:
+        # Diverging and sequential can be interpolated.
+        cmap = cmap.mpl_colormap.resampled(n)
+        for i in np.linspace(0, 1, n):
+            yield formatter(cmap(i))
 
 
 def iter_colors(x, *args, **kw):
@@ -231,6 +253,12 @@ def iter_colors(x, *args, **kw):
         An iterable object. The __next__ method of the iterator returns a tuple
         containing a color and the value obtained from iterating over iterable.
 
+    Examples
+    --------
+    Quickly generate a dictionary mapping value to color. Useful for plotting.
+
+    >>> values = [0, 10, 20, 40, 80]
+    >>> value_colors = {value: color for color, value in iter_colors(values)
     '''
     n = len(x)
     c_iter = get_color_cycle(n, *args, **kw)

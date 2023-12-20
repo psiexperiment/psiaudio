@@ -174,6 +174,24 @@ def csd_df(s, fs, *args, **kw):
         return pd.DataFrame(c, columns=freqs, index=index)
 
 
+def _as_df(fn, s, fs, *args, waveform_averages=None, **kw):
+    p = fn(s, fs, *args, waveform_averages=waveform_averages, **kw)
+    n = s.shape[-1]
+    if waveform_averages is not None:
+        n = n // waveform_averages
+    freqs = pd.Index(np.fft.rfftfreq(n, 1/fs), name='frequency')
+    if p.ndim == 1:
+        name = s.name if isinstance(s, pd.Series) else fn.__name__
+        return pd.Series(p, index=freqs, name=name)
+    else:
+        index = s.index if isinstance(s, pd.DataFrame) else None
+        return pd.DataFrame(p, columns=freqs, index=index)
+
+
+def phase_df(s, fs, *args, waveform_averages=None, **kw):
+    return _as_df(phase, s, fs, *args, waveform_averages=waveform_averages, **kw)
+
+
 def psd_df(s, fs, *args, waveform_averages=None, **kw):
     '''
     Compute PSD and return as a dataframe with columns indexed by frequency
@@ -208,17 +226,7 @@ def psd_df(s, fs, *args, waveform_averages=None, **kw):
         original index of ``s`` will be preserved. If ``s`` was an array, psd
         will have a simple integer index.
     '''
-    p = psd(s, fs, *args, waveform_averages=waveform_averages, **kw)
-    n = s.shape[-1]
-    if waveform_averages is not None:
-        n = n // waveform_averages
-    freqs = pd.Index(np.fft.rfftfreq(n, 1/fs), name='frequency')
-    if p.ndim == 1:
-        name = s.name if isinstance(s, pd.Series) else 'psd'
-        return pd.Series(p, index=freqs, name=name)
-    else:
-        index = s.index if isinstance(s, pd.DataFrame) else None
-        return pd.DataFrame(p, columns=freqs, index=index)
+    return _as_df(psd, s, fs, *args, waveform_averages=waveform_averages, **kw)
 
 
 def tone_conv(s, fs, frequency, window=None):
@@ -666,6 +674,48 @@ def process_tone(fs, signal, frequency, min_snr=None, max_thd=None,
 ################################################################################
 # Octave functions (typically used for generating octave frequencies)
 ################################################################################
+def nearest_octave(x, step, si_prefix=''):
+    '''
+    Coerces x to the nearest octave step with some sensible defaults
+
+    Parameters
+    ----------
+    x : {int, float}
+        Value to coerce.
+    step : float
+        Octave step size to coerce to.
+    si_prefix {'', 'k'}
+        If '', `x` is assumed to be in Hz. If 'k', `x` is assumed to be in kHz.
+        This is important because the standard coercion algorithm will coerce
+        8000 Hz to 8192 Hz otherwise.
+
+    Examples
+    --------
+    >>> nearest_octave(45200, 0.5)
+    45255
+    >>> nearest_octave(11000, 0.5)
+    11314
+    >>> nearest_octave(8000, 0.5)
+    8000
+    >>> nearest_octave(45.2, 0.5, 'k')
+    45.255
+    >>> nearest_octave(11, 0.5, 'k')
+    11.314
+    >>> nearest_octave(8.0, 0.5, 'k')
+    8.0
+    '''
+    if si_prefix == '':
+        scale = 1e3
+    elif si_prefix == 'k':
+        scale = 1
+    else:
+        raise ValueError(f'Unrecognized si_prefix: {si_prefix}')
+    x = 2**(0.5 * np.round(np.log2(x / scale) / step)) * scale
+    if si_prefix == '':
+        x = np.round(x)
+    return x
+
+
 def octave_space(lb, ub, step, mode='nearest'):
     '''
     >>> print(octave_space(4, 32, 1.0))
@@ -760,8 +810,8 @@ def check_interleaved_octaves(freqs, min_octaves=1):
         Minimum octave spacing to enforce (this is multiplied by 0.95 to allow
         for some fudge factor if frequencies were rounded).
 
-    Notes
-    -----
+    Note
+    ----
     * If you are rounding frequencies to the nearest Hz, the actual octaves
       spacing may be slightly less or more than the desired spacing due to the
       rounding. We multiply `min_octaves` by 0.99 to allow for this small error
@@ -857,7 +907,8 @@ def psd_bootstrap_vec(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None)
     )
 
 
-def psd_bootstrap_loop(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None):
+def psd_bootstrap_loop(x, fs, n_draw=None, n_bootstrap=100, rng=None,
+                       window=None, callback='tqdm', calculate=None):
     '''
     Calculate the normalized PSD across trials using a boostrapping algorithm
 
@@ -871,7 +922,8 @@ def psd_bootstrap_loop(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None
     fs : float
         Sampling rate of signal
     n_draw : int
-        Number of trials to draw on each bootstrap cycle.
+        Number of trials to draw on each bootstrap cycle. If None, draw all
+        samples (with replacement).
     n_bootstrap : int
         Number of bootstrap cycles.
     rng : instance of RandomState
@@ -888,11 +940,12 @@ def psd_bootstrap_loop(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None
 
     Notes
     -----
-    TODO: Add citation (Bharadwaj).
+    This algorithm is adapted from Zhu et al. 2013 (JASA).
     '''
     if rng is None:
         rng = np.random.RandomState()
 
+    cb = get_cb(callback)
     c = csd(x, window=window)
     i = np.arange(len(c))
 
@@ -900,19 +953,24 @@ def psd_bootstrap_loop(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None
     mean_psd_bs_rand = []
     plv_bs = []
 
-    for b in range(n_bootstrap):
-        c_bs = c[rng.choice(i, n_draw)]
+    for j in range(n_bootstrap):
+        c_bs = c[rng.choice(i, n_draw, replace=True)]
         random_phases = rng.uniform(0, 2 * np.pi, size=c_bs.shape)
         c_bs_rand = np.abs(c_bs) * np.exp(-1j * random_phases)
         mean_psd_bs.append(db(np.abs(c_bs.mean(axis=0))))
         mean_psd_bs_rand.append(db(np.abs(c_bs_rand.mean(axis=0))))
         angle_bs = np.angle(c_bs)
         plv_bs.append(np.abs(np.mean(np.exp(-1j*angle_bs), axis=0)))
+        cb((j + 1) / n_bootstrap)
 
-    plv = np.mean(plv_bs, axis=0)
-    psd_nf = np.mean(mean_psd_bs_rand, axis=0)
-    psd = np.mean(mean_psd_bs, axis=0)
-    psd_norm = psd - psd_nf
+    plv_bs = np.vstack(plv_bs)
+    mean_psd_bs_rand = np.vstack(mean_psd_bs_rand)
+    mean_psd_bs = np.vstack(mean_psd_bs)
+
+    plv = plv_bs.mean(axis=0)
+    psd_norm = (mean_psd_bs - mean_psd_bs_rand).mean(axis=0)
+    psd_nf = mean_psd_bs_rand.mean(axis=0)
+    psd = mean_psd_bs.mean(axis=0)
 
     return pd.DataFrame({
             'psd_nf': psd_nf,
