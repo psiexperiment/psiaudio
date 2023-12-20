@@ -192,7 +192,7 @@ def get_color_cycle(n, name='palettable.matplotlib.Viridis_20_r', fmt='matplotli
         Number of colors needed.
     name : string
         Name of fully qualified palettable color map (e.g.,
-        palettable.matplotlib.Viridis_20_r). The number does not actually for
+        palettable.matplotlib.Viridis_20_r). The number does not matter for
         continuous scales since we will be interpolating.
     fmt: {'matplotlib'}
         Format to return colors in. Select the version that is compatible with
@@ -212,16 +212,26 @@ def get_color_cycle(n, name='palettable.matplotlib.Viridis_20_r', fmt='matplotli
         'pyqtgraph': lambda x: tuple(int(v * 255) for v in x),
     }
 
-    # This generates a LinearSegmetnedColormap instance that interpolates to
+    # This generates a LinearSegmentedColormap instance that interpolates to
     # the requested number of colors. We can then extract these colors by
     # calling the colormap with a mapping of 0 ... 1 where the number of values
     # in the array is the number of colors we need (spaced equally along 0 ...
     # 1).
 
     formatter = formatters[fmt]
-    cmap = getattr(module, cmap_name).mpl_colormap.resampled(n)
-    for i in np.linspace(0, 1, n):
-        yield formatter(cmap(i))
+    cmap = getattr(module, cmap_name)
+    if cmap.type == 'qualitative':
+        # For qualitative color maps, don't do any interpoloation because
+        # they're not really designed for that.
+        if len(cmap.mpl_colors) < n:
+            raise ValueError('Not enough colors available')
+        for i in range(n):
+            yield cmap.mpl_colors[i]
+    else:
+        # Diverging and sequential can be interpolated.
+        cmap = cmap.mpl_colormap.resampled(n)
+        for i in np.linspace(0, 1, n):
+            yield formatter(cmap(i))
 
 
 def iter_colors(x, *args, **kw):
