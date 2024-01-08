@@ -1349,7 +1349,7 @@ def reject_epochs(reject_threshold, mode, status_cb, valid_target):
         n = len(data)
         n_accept = len(valid_data)
 
-        if n_accept != 0:
+        if len(valid_data) != 0:
             valid_target(valid_data)
         if status_cb is not None:
-            status_cb(n, n_accept)
+            status_cb(mask)
