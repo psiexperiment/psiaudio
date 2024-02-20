@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 
 def assert_pipeline_data_equal(a, b):

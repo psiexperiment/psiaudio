@@ -407,7 +407,7 @@ def rms(s, detrend=False, axis=-1):
 
 
 def rms_rfft(x):
-    return np.sqrt(np.sum(np.abs(x) ** 2))
+    return np.sqrt(np.sum(np.abs(x) ** 2, axis=-1))
 
 
 def rms_rfft_db(x, *args, **kw):

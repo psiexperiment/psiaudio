@@ -503,6 +503,48 @@ def rms(fs, duration, target):
 
 
 @coroutine
+def rms_band(fs, fl, fh, duration, target):
+    '''
+    Calculate RMS inside a band
+    '''
+    n = int(round(fs * duration))
+    data = [(yield)]
+    samples = sum(d.shape[-1] for d in data)
+
+    fs = data[0].fs
+    s0 = 0
+    rms_fs = fs / n
+    freq = np.fft.rfftfreq(n, 1/fs)
+    fli = np.argmin(np.abs(freq-fl))
+    fhi = np.argmin(np.abs(freq-fh))
+
+    while True:
+        if samples >= n:
+            data = concat(data, axis=-1)
+            n_blocks = data.shape[-1] // n
+            n_samples = n_blocks * n
+
+            shape = list(data.shape[:-1]) + [n_blocks, n]
+            d = data[..., :n_samples]
+            d.shape = shape
+            log.info(d)
+
+            d = signal.detrend(d, -1, 'linear')
+            d_psd = util.psd(d, fs=fs)
+            result = util.rms_rfft(d_psd[..., fli:fhi])
+            result = PipelineData(result, fs=rms_fs, s0=s0)
+            target(result)
+            d = data[..., n_samples:]
+            s0 += result.shape[-1]
+
+            samples = d.shape[-1]
+            data = [d]
+
+        data.append((yield))
+        samples += data[-1].shape[-1]
+
+
+@coroutine
 def iirfilter(fs, N, Wn, rp, rs, btype, ftype, target):
     b, a = signal.iirfilter(N, Wn, rp, rs, btype, ftype=ftype, fs=fs)
     if np.any(np.abs(np.roots(a)) > 1):

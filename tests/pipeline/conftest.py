@@ -21,6 +21,26 @@ def data2d(fs):
 
 
 @pytest.fixture
+def tone1d(fs):
+    md = {'foo': 'bar'}
+    t = np.arange(100000) / fs
+    data = np.sin(2*np.pi*t*1500)
+    return pipeline.PipelineData(data, fs, metadata=md)
+
+
+@pytest.fixture
+def tone2d(fs):
+    md = {'foo': 'bar'}
+    channel = ['channel1', 'channel2']
+    t = np.arange(100000) / fs
+    data = np.vstack([
+        np.sin(2*np.pi*t*1500),
+        np.sin(2*np.pi*t*4500),
+    ])
+    return pipeline.PipelineData(data, fs, channel=channel, metadata=md)
+
+
+@pytest.fixture
 def data3d(fs):
     md = [{'foo': 'bar'}, {'foo': 'baz'}, {'foo': 'biz'}]
     channel = ['channel1', 'channel2']

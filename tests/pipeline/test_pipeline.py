@@ -122,6 +122,34 @@ def test_rms(fs, data, request):
     assert actual_rms.s0 == 0
 
 
+@pytest.mark.parametrize('data,', ['tone1d', 'tone2d'])
+def test_rms_band(fs, data, request):
+    data = request.getfixturevalue(data)
+
+    b, a = signal.iirfilter(4, [1000, 2000], btype='band', ftype='butter',
+                            fs=fs)
+
+    duration = 0.5
+    n_samples = int(round(data.fs * duration))
+    n_chunks = data.shape[-1] // n_samples
+
+    n = n_samples * n_chunks
+    expected = signal.filtfilt(b, a, data[..., :n], axis=-1)
+    expected.shape = list(expected.shape[:-1]) + [n_chunks, n_samples]
+    expected_rms = np.mean(expected ** 2, axis=-1) ** 0.5
+
+
+    cb = partial(pipeline.rms_band, data.fs, 1000, 2000, duration)
+    result = feed_pipeline(cb, data)
+    for r in result:
+        assert r.fs == (fs / n_samples)
+
+    actual_rms = pipeline.concat(result, axis=-1)
+    np.testing.assert_array_almost_equal(actual_rms, expected_rms, 2)
+    assert actual_rms.fs == (fs / n_samples)
+    assert actual_rms.s0 == 0
+
+
 @pytest.mark.parametrize('data,', ['data1d', 'data2d'])
 def test_iirfilter(fs, data, stim_fl, stim_fh, request):
     # Note, do not remove `fs` from the list of arguments. This seems to be
@@ -227,8 +255,8 @@ def test_mc_reference(fs, data2d):
 
 
 def test_basic_reject_epochs():
-    def status_cb(n, v):
-        print(f'{v} of {n} valid')
+    def status_cb(n):
+        print(f'{n} valid')
 
     result = []
     p = pipeline.reject_epochs(1, 'amplitude', status_cb, result.extend)
