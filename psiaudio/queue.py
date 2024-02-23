@@ -475,8 +475,8 @@ class InterleavedFIFOSignalQueue(AbstractSignalQueue):
         that we have not achieved the desired number of trials for.
     '''
 
-    def __init__(self, keep_complete_waveforms=True, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, keep_complete_waveforms=True, **kwargs):
+        super().__init__(**kwargs)
         self._i = -1
         self._complete = False
         self._keep_complete_waveforms = keep_complete_waveforms
@@ -523,8 +523,8 @@ class RandomSignalQueue(AbstractSignalQueue):
 
 class BlockedRandomSignalQueue(InterleavedFIFOSignalQueue):
 
-    def __init__(self, fs, seed=0, *args, **kwargs):
-        super().__init__(fs, *args, **kwargs)
+    def __init__(self, seed=0, **kwargs):
+        super().__init__(**kwargs)
         self._i = []
         self._rng = np.random.RandomState(seed)
 
@@ -552,8 +552,8 @@ class GroupedFIFOSignalQueue(FIFOSignalQueue):
     then it shifts to E F G H.
     '''
 
-    def __init__(self, group_size, fs=None, *args, **kwargs):
-        super().__init__(fs, *args, **kwargs)
+    def __init__(self, group_size, **kwargs):
+        super().__init__(**kwargs)
         self._group_size = group_size
         self._i = -1
 
@@ -591,8 +591,8 @@ class BlockedFIFOSignalQueue(GroupedFIFOSignalQueue):
     The queue iterates through A B C D E F G H until all trials have been
     presented.
     '''
-    def __init__(self, fs=None, *args, **kwargs):
-        super().__init__(group_size=0, fs=fs, *args, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(group_size=0, **kwargs)
 
     def append(self, *args, **kwargs):
         self._group_size += 1
