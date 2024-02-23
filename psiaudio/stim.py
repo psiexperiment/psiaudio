@@ -1020,6 +1020,7 @@ def sam_tone(fs, fc, fm, level, depth=1, phase=0, phase_lb=0, phase_ub=0,
     else:
         sf = level
 
+    # Use https://ccrma.stanford.edu/~jos/st/Sinusoidal_Amplitude_Modulation_AM.html to figure it out
     if depth != 1:
         raise ValueError('sam_tone currently not configured for depths != 1')
 
