@@ -460,3 +460,38 @@ def test_ram_efr_factory(fs, stim_level, mod_envelope_depth, mod_envelope_fm,
                   depth=mod_envelope_depth, duty_cycle=square_wave_duty_cycle,
                   alpha=square_wave_alpha)
     assert_chunked_generation(make_factory, kwargs, chunksize, n_chunks)
+
+
+################################################################################
+# Envelope transform
+################################################################################
+def test_envelope_transform(fs, stim_calibration):
+    carrier = stim.ToneFactory(fs=fs, frequency=8e3, level=94,
+                                calibration=stim_calibration)
+    env = stim.EnvelopeFactory(envelope='bartlett', duration=8,
+                                rise_time=None,
+                                fs=fs,
+                                input_factory=carrier,
+                                transform=lambda x: x ** 10)
+    actual = env.get_samples_remaining()
+    n_samples = len(actual)
+
+    carrier = stim.ToneFactory(fs=fs, frequency=8e3, level=94,
+                                calibration=stim_calibration)
+    env = signal.windows.bartlett(n_samples) ** 10
+    expected = carrier.next(n_samples) * env
+
+    assert_array_equal(actual, expected)
+
+
+def test_envelope_transform_factory(fs, chunksize, n_chunks, stim_calibration):
+    def make_factory(**kwargs):
+        carrier = stim.ToneFactory(fs=fs, frequency=8e3, level=94,
+                                   calibration=stim_calibration)
+        env = stim.EnvelopeFactory(envelope='bartlett', duration=8,
+                                   rise_time=None,
+                                   fs=fs,
+                                   input_factory=carrier,
+                                   transform=lambda x: x ** 10)
+        return env
+    assert_chunked_generation(make_factory, {}, chunksize, n_chunks)

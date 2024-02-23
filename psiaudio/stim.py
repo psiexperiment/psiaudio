@@ -208,7 +208,7 @@ class GateFactory(Modulator):
 ################################################################################
 @fast_cache
 def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
-             samples='auto'):
+             samples='auto', transform=None):
     '''
     Generates envelope. Can handle generating fragments (i.e.,
     incomplete sections of the waveform).
@@ -230,6 +230,14 @@ def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
         Start time of envelope
     samples : int
         Number of samples to generate for envelope.
+    transform : callable
+        Callable that can transform the resulting envelope into the desired
+        units.
+
+    Examples
+    --------
+    Generate an envelope that ramps linearly as a function of SPL.
+    >>> e = envelope(
     '''
     i_env_lb = int(round(start_time * fs))
     i_duration = int(round(duration * fs))
@@ -279,13 +287,16 @@ def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
 
     n_null_post = samples
 
-    return np.concatenate((
+    env = np.concatenate((
         np.zeros(n_null_pre),
         ramp[i_onset:i_onset+n_onset],
         np.ones(n_ss),
         ramp[i_rise_time+i_offset:i_rise_time+i_offset+n_offset],
         np.zeros(n_null_post),
     ), axis=-1)
+    if transform is not None:
+        env = transform(env)
+    return env
 
 
 def cos2ramp(m):
@@ -302,9 +313,10 @@ def cos2envelope(fs, duration, rise_time, offset=0, start_time=0,
 class EnvelopeFactory(GateFactory):
 
     def __init__(self, envelope, fs, duration, rise_time, input_factory,
-                 start_time=0):
+                 start_time=0, transform=None):
         self.rise_time = rise_time
         self.envelope = envelope
+        self.transform = transform
         super().__init__(fs, start_time, duration, input_factory)
 
     def next(self, samples):
@@ -312,7 +324,7 @@ class EnvelopeFactory(GateFactory):
         env = envelope(window=self.envelope, fs=self.fs,
                        duration=self.duration, rise_time=self.rise_time,
                        offset=self.offset, start_time=self.start_time,
-                       samples=samples)
+                       samples=samples, transform=self.transform)
         waveform = env*token
         self.offset += samples
         return waveform

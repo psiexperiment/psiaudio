@@ -14,7 +14,6 @@ from psiaudio import util
 
 figure, axes = plt.subplots(1, 2, figsize=(8, 4))
 
-#flat_cal = calibration.FlatCalibration.from_spl(80)
 cal = calibration.load_demo_starship()
 fs = 100e3
 window = 5e-3
