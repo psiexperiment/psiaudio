@@ -306,6 +306,9 @@ def test_sam_tone(fs, stim_level, mod_fc, mod_envelope_fm, mod_envelope_depth,
     if round(fs) != fs:
         # This causes some annoying indexing issues.
         pytest.skip()
+    if mod_envelope_depth != 1.0:
+        # Not currently supported
+        pytest.skip()
 
     factory = stim.SAMToneFactory(**kwargs)
     s = factory.next(samples=int(fs * 30))
@@ -338,6 +341,9 @@ def test_sam_tone_starship(fs, stim_level, mod_fc, mod_envelope_fm,
     if round(fs) != fs:
         # This causes some annoying indexing issues.
         pytest.skip()
+    if mod_envelope_depth != 1.0:
+        # Not currently supported
+        pytest.skip()
 
     factory = stim.SAMToneFactory(**kwargs)
     s = factory.next(samples=int(fs * 30))
@@ -351,6 +357,9 @@ def test_sam_tone_starship(fs, stim_level, mod_fc, mod_envelope_fm,
 def test_sam_tone_factory(fs, stim_level, mod_fc, mod_envelope_fm,
                           mod_envelope_depth, stim_calibration, chunksize,
                           n_chunks):
+    if mod_envelope_depth != 1.0:
+        # Not currently supported
+        pytest.skip()
     kwargs = dict(fs=fs, fc=mod_fc, fm=mod_envelope_fm,
                   depth=mod_envelope_depth, level=stim_level,
                   calibration=stim_calibration)

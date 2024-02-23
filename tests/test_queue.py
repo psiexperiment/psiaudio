@@ -23,9 +23,9 @@ def make_tone(fs, frequency=250, duration=5e-3):
 
 def make_queue(fs, ordering, frequencies, trials, duration=5e-3, isi=isi):
     if ordering == 'FIFO':
-        queue = FIFOSignalQueue(fs)
+        queue = FIFOSignalQueue(fs=fs)
     elif ordering == 'interleaved':
-        queue = InterleavedFIFOSignalQueue(fs)
+        queue = InterleavedFIFOSignalQueue(fs=fs)
     else:
         raise ValueError(f'Unrecognized queue ordering {ordering}')
 
