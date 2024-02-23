@@ -38,7 +38,7 @@ def apply_max_correction(sf, max_correction):
 
 
 def apply_weighting(freq, sf, weighting_type):
-    weights = weighting.load(weighting_type)
+    weights = weighting.load(freq, weighting_type)
     return sf * util.dbi(weights)
 
 
@@ -694,7 +694,7 @@ class BandlimitedFIRNoiseFactory(Carrier):
             sf = apply_max_correction(sf, max_correction)
 
         if audiogram_weighting is not None:
-            sf = apply_audiogram_weighting(freq, sf, audiogram_weighting)
+            sf = apply_weighting(freq, sf, audiogram_weighting)
 
         freq = np.concatenate(([0, fl / 1.1], freq, [fh * 1.1, fs / 2]))
         sf = np.pad(sf, 2)
