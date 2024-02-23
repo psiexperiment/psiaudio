@@ -407,7 +407,11 @@ def rms(s, detrend=False, axis=-1):
 
 
 def rms_rfft(x):
-    return np.sqrt(np.sum(np.abs(x) ** 2, axis=-1))
+    if isinstance(x, pd.Series):
+        axis = None
+    else:
+        axis = -1
+    return np.sqrt(np.sum(np.abs(x) ** 2, axis=axis))
 
 
 def rms_rfft_db(x, *args, **kw):
