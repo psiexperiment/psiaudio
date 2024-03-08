@@ -233,11 +233,6 @@ def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
     transform : callable
         Callable that can transform the resulting envelope into the desired
         units.
-
-    Examples
-    --------
-    Generate an envelope that ramps linearly as a function of SPL.
-    >>> e = envelope(
     '''
     i_env_lb = int(round(start_time * fs))
     i_duration = int(round(duration * fs))
