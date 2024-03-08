@@ -1,7 +1,7 @@
 import logging
 log = logging.getLogger(__name__)
 
-from functools import partial
+from functools import partial, wraps
 import itertools
 from pathlib import Path
 
@@ -18,6 +18,7 @@ from . import queue
 def fast_cache(f):
     cache = {}
     kwd_marker = object()
+    @wraps(f)
     def wrapper(*args, **kw):
         key = args + (kwd_marker,) + tuple(sorted(kw.items()))
         if key not in cache:
