@@ -68,7 +68,14 @@ sv = sliding_window_view(s, window_size)
 s_rms = util.rms(sv[::window_step])
 s_spl = util.patodb(s_rms)
 plt.figure()
-plt.plot(s_spl)
+t_window = np.arange(len(s_spl)) * window_step / fs
+plt.plot(t_window, s_spl)
+
+i = np.argmax(s_spl)
+peak_time = t_window[i]
+peak = s_spl[i]
+expected = np.abs(t_window - peak_time) * -ramp_rate + peak
+plt.plot(t_window, expected, color='seagreen', ls='-', lw=5, alpha=0.25)
 
 f, t, Zxx = stft(s, fs, scaling='psd')
 spectrum = util.patodb(np.abs(Zxx))
