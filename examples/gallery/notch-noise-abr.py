@@ -22,6 +22,8 @@ fs = 100e3
 n_cycles = 8
 frequency = 4e3
 duration = 8 / 4e3
+noise_duration = 20e-3
+noise_level = 94-20
 
 ###############################################################################
 # Since the calibration scales stimuli to match the requested RMS level, we
@@ -64,13 +66,42 @@ gains = {
 noise = stim.shaped_noise(
     fs=fs,
     gains=gains,
-    duration=20e-3,
-    level=94-20,
+    duration=noise_duration,
+    level=noise_level,
     calibration=cal,
 )
 
 noise_level = cal.get_spl(None, util.rms(noise))
 tone_level = cal.get_spl(frequency, tone.max())
+
+###############################################################################
+# Alternatively, we can use a simple notch like that used by Intelligent
+# Hearing Systems.
+
+# Here, we want to set the noise level such that the spectrum level is 20 dB
+# below the peak-equivalent of the tone burst. This is a somewhat complex
+# calculation since it requires us to figure out how the noise is divided into
+# bins given the noise duration and sampling rate. The number of FFT bins is
+# defined as fs / N where N is the number of samples. Since N is equal to
+# duration * fs, this simplifies to 1 / duration. Next, we are assuming the
+# noise will be fully broadband, so this means the noise will span the full
+# range of possible frequencies (0 to Nyquist). By dividing the frequency range
+# by the bin width, we get the number of bands the noise is distributed across.
+bin_width = 1 / noise_duration
+f_max = fs / 2
+n_bins = f_max / bin_width
+band_level = util.spectrum_to_band_level(94-20, n_bins)
+
+ihs_noise = stim.notch_noise(
+	fs=fs,
+	notch_frequency=frequency,
+	q=1.33,
+	level=band_level,
+	duration=noise_duration,
+	calibration=cal,
+)
+
+ihs_noise_level = cal.get_spl(None, util.rms(ihs_noise))
 
 
 ###############################################################################
@@ -81,6 +112,7 @@ t_noise = np.arange(len(noise)) / fs * 1e3
 
 psd_tone = util.patodb(util.psd_df(tone, fs))
 psd_noise = util.patodb(util.psd_df(noise, fs))
+psd_ihs_noise = util.patodb(util.psd_df(ihs_noise, fs))
 
 figure, axes = plt.subplots(1, 2, figsize=(8, 4))
 axes[0].plot(t_tone, tone)
@@ -90,7 +122,8 @@ axes[0].set_xlabel('Time (msec)')
 axes[0].set_ylabel('Amplitude (Pascals)')
 
 axes[1].semilogx(psd_tone, label=f'Tone ({tone_level:.1f} dB peSPL)')
-axes[1].semilogx(psd_noise, label=f'Noise ({noise_level:.1f} dB SPL)')
+axes[1].semilogx(psd_noise, label=f'Notch noise ({noise_level:.1f} dB SPL)')
+axes[1].semilogx(psd_ihs_noise, label=f'IHS notch noise ({ihs_noise_level:.1f} dB SPL)')
 
 ticks = util.octave_space(250, 16e3, 1)
 axes[1].axis(xmin=ticks[0], xmax=ticks[-1], ymin=0, ymax=100)

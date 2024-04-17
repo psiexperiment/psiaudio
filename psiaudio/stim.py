@@ -160,7 +160,8 @@ class Transform(Waveform):
         self.input_factory.reset()
 
     def next(self, samples):
-        waveform = self.transform(self.input_factory.next(samples))
+        waveform = self.input_factory.next(samples)
+        waveform = self.transform(waveform)
         self.offset += len(waveform)
         return waveform
 
@@ -172,8 +173,9 @@ class Modulator(Transform):
     '''
     Modulates an input waveform
     '''
-    def transform(self, samples):
-        return self.env(samples) * samples
+    def transform(self, waveform):
+        samples = len(waveform)
+        return self.env(samples) * waveform
 
     def env(self, samples):
         raise NotImplementedError

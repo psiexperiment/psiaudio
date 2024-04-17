@@ -374,6 +374,16 @@ def spectrum_to_band_level(spectrum_db, n):
     -------
     band_db : float
         Band level in same units as spectrum level.
+
+    Examples
+    --------
+    Calculate band level for broadband noise of 20 msec duration generated at
+    100 kHz with a spectrum level of 94 dB SPL.
+    >>> bin_width = 1 / 20e-3
+    >>> f_max = 100e3 / 2
+    >>> n_bins = f_max / bin_width
+    >>> spectrum_to_band_level(94, n_bins)
+    124.0
     '''
     return spectrum_db + 10 * np.log10(n)
 
