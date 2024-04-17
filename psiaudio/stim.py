@@ -142,9 +142,9 @@ class Carrier(Waveform):
         return False
 
 
-class Modulator(Waveform):
+class Transform(Waveform):
     '''
-    Modulates an input waveform
+    Modifies an input waveform
     '''
     def get_duration(self):
         return self.input_factory.get_duration()
@@ -160,9 +160,20 @@ class Modulator(Waveform):
         self.input_factory.reset()
 
     def next(self, samples):
-        waveform = self.env(samples) * self.input_factory.next(samples)
+        waveform = self.transform(self.input_factory.next(samples))
         self.offset += len(waveform)
         return waveform
+
+    def transform(self, samples):
+        raise NotImplementedError
+
+
+class Modulator(Transform):
+    '''
+    Modulates an input waveform
+    '''
+    def transform(self, samples):
+        return self.env(samples) * samples
 
     def env(self, samples):
         raise NotImplementedError
@@ -473,14 +484,10 @@ class SquareWaveEnvelopeFactory(Modulator):
 ################################################################################
 class BroadbandNoiseFactory(Carrier):
     '''
-    Factory for generating continuous bandlimited noise
+    Factory for generating continuous broadband noise
     '''
     def __init__(self, fs, level, seed=1, equalize=False, polarity=1, calibration=None):
-        self.fs = fs
-        self.level = level
-        self.seed = seed
-        self.calibration = calibration
-        self.polarity = polarity
+        vars(self).update(locals())
 
         if equalize:
             raise ValueError('Equalization of broadband noise not implemented')
@@ -515,6 +522,42 @@ def broadband_noise(fs, level, duration, seed=1, equalize=False, polarity=1,
     kwargs = locals()
     kwargs.pop('duration')
     factory = BroadbandNoiseFactory(**kwargs)
+    samples = int(round(duration * fs))
+    return factory.next(samples)
+
+
+################################################################################
+# Notch noise
+################################################################################
+class NotchFilterFactory(Transform):
+    '''
+    Factory for applying notch filter to a continuous input
+
+    This was written to generate stimuli similar to that used by the
+    Intelligent Hearing Systems notch noise feature where the Q factor is set
+    to 1.33 by default.
+    '''
+    def __init__(self, fs, notch_frequency, q, input_factory):
+        vars(self).update(locals())
+        self.b, self.a = signal.iirnotch(notch_frequency, q, fs)
+        self.reset()
+
+    def reset(self):
+        super().reset()
+        self.zi = signal.lfilter_zi(self.b, self.a)
+
+    def transform(self, samples):
+        samples, self.zi = signal.lfilter(self.b, self.a, samples, zi=self.zi)
+        return samples
+
+
+def notch_noise(fs, notch_frequency, q, level, duration, seed=1,
+                equalize=False, polarity=1, calibration=None):
+    noise_factory = BroadbandNoiseFactory(fs=fs, level=level, seed=seed,
+                                          equalize=equalize, polarity=polarity,
+                                          calibration=calibration)
+    factory = NotchFilterFactory(fs=fs, notch_frequency=notch_frequency, q=q,
+                                 input_factory=noise_factory)
     samples = int(round(duration * fs))
     return factory.next(samples)
 
