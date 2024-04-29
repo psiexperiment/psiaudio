@@ -398,10 +398,25 @@ def sam_envelope(offset, samples, fs, depth, fm, delay, equalize):
 
 class SAMEnvelopeFactory(Modulator):
 
-    def __init__(self, fs, depth, fm, delay, direction, input_factory):
+    def __init__(self, fs, depth, fm, delay, direction, input_factory,
+                 onset_method='ss_transition'):
         vars(self).update(locals())
-        self.eq_phase = sam_eq_phase(delay, depth, direction)
-        self.eq_power = sam_eq_power(depth)
+        if onset_method == 'ss_transition':
+            # This assumes that we are trying to transition from a steady-state
+            # noise. The overall level and starting phase will be adjusted such
+            # that we get a smooth transition from a "flat" envelope to a
+            # modulated envelope with no level cue.
+            self.eq_phase = sam_eq_phase(delay, depth, direction)
+            self.eq_power = sam_eq_power(depth)
+        elif onset_method == 'silence_transition':
+            # This assumes that the transition is from silence. Since the
+            # envelope has a DC offset, we need to shift phase by a full half
+            # cycle to get to the minima.
+            self.eq_phase = np.pi
+            self.eq_power = sam_eq_power(depth)
+        else:
+            raise ValueError(f'Unrecognized onset method: "{onset_method}"')
+
         self.reset()
 
     def env(self, samples):
