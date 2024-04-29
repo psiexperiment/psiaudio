@@ -229,10 +229,11 @@ def psd_df(s, fs, *args, waveform_averages=None, **kw):
     return _as_df(psd, s, fs, *args, waveform_averages=waveform_averages, **kw)
 
 
-def tone_conv(s, fs, frequency, window=None):
+def tone_conv(s, fs, frequency, window=None, detrend='linear'):
     frequency_shape = tuple([Ellipsis] + [np.newaxis]*s.ndim)
     frequency = np.asarray(frequency)[frequency_shape]
-    s = signal.detrend(s, type='linear', axis=-1)
+    if detrend is not None:
+        s = signal.detrend(s, type=detrend, axis=-1)
     n = s.shape[-1]
     if window is not None:
         w = signal.get_window(window, n)
@@ -242,8 +243,8 @@ def tone_conv(s, fs, frequency, window=None):
     return np.mean(r, axis=-1)
 
 
-def tone_power_conv(s, fs, frequency, window=None):
-    r = tone_conv(s, fs, frequency, window)
+def tone_power_conv(s, fs, frequency, window=None, detrend='linear'):
+    r = tone_conv(s, fs, frequency, window, detrend)
     return np.abs(r)/np.sqrt(2.0)
 
 
