@@ -106,7 +106,20 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
     ----------
     axes : matplotlib Axes instance
         Axes to plot on
+    waveforms : pd.DataFrame
+        Waveforms to plot. Must be formatted as a DataFrame with one row per
+        plot. Index must contain at least one level.
+    waterfall_level : str
+        Name of level in index indicating the value to show on the plot.
+
+    Returns
+    -------
+    transforms : dict
+        Dictionary mapping waterfall level to the transform used for that
+        level. This can be used to plot additional information for each level.
     '''
+    transforms = {}
+
     if x_transform is None:
         x_transform = lambda x: x
     levels = waveforms.index.get_level_values(waterfall_level)
@@ -140,7 +153,7 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
     bscale_out = T.BboxTransformTo(bscale_out_box)
 
     # This compresses vertically so lines tend to be plotted within the range
-    # allowed by the offset spacing. 
+    # allowed by the offset spacing.
     tscale_in_box = T.Bbox([[0, -1], [1, 1]])
     tscale_out_box = T.Bbox([[0, 0], [1, offset_step]])
     tscale_in = T.BboxTransformFrom(tscale_in_box)
@@ -157,6 +170,9 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
 
     for i, (l, w) in enumerate(zip(levels, waveforms)):
         y_min, y_max = w.min(), w.max()
+
+        # This code would be needed if we want to be able to plot normalized
+        # waveforms.
         #tnorm_in_box = T.Bbox([[0, -1], [1, 1]])
         #tnorm_out_box = T.Bbox([[0, -1], [1, 1]])
         #tnorm_in = T.BboxTransformFrom(tnorm_in_box)
@@ -170,6 +186,7 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
             tscale_in + tscale_out + \
             translate + axes.transAxes
         trans = T.blended_transform_factory(axes.transData, y_trans)
+        transforms[l] = trans
 
         axes.plot(t, w, transform=trans, **plotkw)
         text_trans = T.blended_transform_factory(axes.transAxes, y_trans)
@@ -179,6 +196,8 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
     axes.grid()
     for spine in ('top', 'left', 'right'):
         axes.spines[spine].set_visible(False)
+
+    return transforms
 
 
 def get_color_cycle(n, name='palettable.matplotlib.Viridis_20_r', fmt='matplotlib'):
