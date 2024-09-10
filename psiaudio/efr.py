@@ -32,7 +32,7 @@ def efr_bs_verhulst(x, fs, fm, n_harmonics, n_bootstrap=20, n_draw=None,
     ------
     efr_amplitude : pd.Series
         Pandas series indexed by bootstrap cycle. Contains EFR amplitude
-        defined as the peak to baseline amplitude.
+        defined as the peak relative to the noise floor.
     harmonics : pd.DataFrame
         Pandas DataFrame containing amplitude, noise floor, phase and
         normalized amplitude. Indexed by harmonic and bootstrap cycle. Norm

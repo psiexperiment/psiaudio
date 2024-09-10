@@ -200,6 +200,9 @@ class FlatCalibration(BaseCalibration):
 
     @classmethod
     def from_mv_pa(cls, mv_pa, **kwargs):
+        '''
+        This converts sensitivity to dB SPL per V
+        '''
         sens = util.db(1 / (mv_pa * 1e-3)) - util.db(20e-6)
         return cls(sensitivity=sens, reference='SPL', **kwargs)
 
