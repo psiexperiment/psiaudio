@@ -80,13 +80,18 @@ def ht2_2samp(x1, x2):
     x2_mean = x2.mean(axis=0)
     xd = x1.mean(axis=0) - x2.mean(axis=0)
 
-    # Implement Two-sample T+ test from section (3)
-    t2 = (N1 * N2) / (N1 + N2) * xd.T @ S_plus @ xd
+    if (n <= p):
+        # Implement Two-sample T+ test from section (3)
+        t2 = (N1 * N2) / (N1 + N2) * xd.T @ S_plus @ xd
 
-    # Implement Two-sample F+ test from section (3)
-    Fp = (p - n + 1) / n**2 * (1/N1 + 1/N2)**-1 * xd.T @ S_plus @ xd
+        # Implement Two-sample F+ test from section (3)
+        F = (p - n + 1) / n**2 * (1/N1 + 1/N2)**-1 * xd.T @ S_plus @ xd
+
+    else:
+        t2 = (1/N1 + 1/N2)**-1 * xd.T @ S_plus @ xd
+        F = (N1 + N2 - p - 1) / (p * (N1 + N2 - 2)) * t2
 
     # Convert F-statistic to a p value
-    p_value = stats.chi2.sf(Fp, df=n)
+    p_value = stats.chi2.sf(F, df=n)
 
-    return ht2_2samp_result(t2, Fp, p_value, n)
+    return ht2_2samp_result(t2, F, p_value, n)
