@@ -1085,7 +1085,6 @@ def sam_tone(fs, fc, fm, level, depth=1, phase=0, phase_lb=0, phase_ub=0,
         sf /= sam_eq_power(depth)
 
     phase = np.array([phase_lb, phase, phase_ub])
-    print(phase)
 
     if samples == 'auto':
         if duration is None:
