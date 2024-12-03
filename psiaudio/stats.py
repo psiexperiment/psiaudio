@@ -71,8 +71,7 @@ def ht2_2samp(x1, x2):
     n = N1 + N2 - 2
 
     # Get sample covariance matrix
-    #S = np.cov(x1.T, ddof=1)
-    S = np.cov(x1.T)
+    S = np.cov(x1.T, ddof=1)
     # Compute Moore-Penrose inverse of covariance matrix
     S_plus = np.linalg.pinv(S)
 
