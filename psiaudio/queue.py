@@ -230,7 +230,11 @@ class AbstractSignalQueue:
 
     def _notify(self, event, info):
         for notifier in self._notifiers[event]:
-            notifier(info)
+            try:
+                notifier(info)
+            except:
+                log.error('Error when notifying %r', notifier)
+                raise
 
     def insert(self, source, trials, delays=None, duration=None, metadata=None):
         k = self._add_source(source, trials, delays, duration, metadata)
