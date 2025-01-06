@@ -223,6 +223,13 @@ class FlatCalibration(BaseCalibration):
         self.sensitivity = sensitivity
         self.fixed_gain = fixed_gain
 
+    def get_level(self, voltage):
+        '''
+        Returns level in calibrated units (e.g., Pascals if reference is SPL).
+        '''
+        sensitivity = self.get_sens(1e3)
+        return voltage * util.dbi(sensitivity)
+
     def get_sens(self, frequency):
         sens = self.sensitivity-self.fixed_gain
         if np.iterable(frequency):
