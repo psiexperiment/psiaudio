@@ -4,10 +4,12 @@ log = logging.getLogger(__name__)
 from importlib import resources
 
 from scipy.interpolate import interp1d
+from scipy import signal
 import numpy as np
 import pandas as pd
 
 from . import util
+from .stim import apply_max_correction
 
 
 ################################################################################
@@ -337,6 +339,43 @@ class InterpCalibration(BaseFrequencyCalibration):
         if self._interp_phase is None:
             raise ValueError('No phase correction data available')
         return self._interp_phase(frequency)
+
+    def make_eq_filter(self, fs, fl=None, fh=None, window='hann', ntaps=1001,
+                       max_correction=30, target_level=80, target_rms=1):
+        '''
+        Generate a FIR filter that can be used to equalize a waveform
+
+        Returns
+        -------
+        '''
+        if fl is None:
+            fl = self.frequency.min()
+        if fh is None:
+            fh = self.frequency.max()
+
+        freq = np.arange(fl, fh+1)
+        sf = self.get_sf(freq, target_level - util.db(target_rms))
+
+        if max_correction is not None:
+            sf = apply_max_correction(sf, max_correction)
+
+        if fl == 1:
+            freq = np.concatenate(([0], freq))
+            sf = np.pad(sf, (1, 0))
+        elif fl > 1:
+            freq = np.concatenate(([0, fl], freq))
+            sf = np.pad(sf, (2, 0))
+
+        if fh == ((fs / 2) - 1):
+            freq = np.concatenate((freq, [fs/2]))
+            sf = np.pad(sf, (0, 1))
+        if fh < ((fs / 2) - 1):
+            freq = np.concatenate((freq, [fh, fs/2]))
+            sf = np.pad(sf, (0, 2))
+
+        filt = signal.firwin2(ntaps, freq=freq, gain=sf, window=window, fs=fs)
+        zi = signal.lfilter_zi(filt, [1])
+        return filt, zi
 
 
 class PointCalibration(BaseFrequencyCalibration):
