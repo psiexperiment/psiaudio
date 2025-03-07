@@ -922,7 +922,7 @@ def psd_bootstrap_vec(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None)
     )
 
 
-def psd_bootstrap_loop(x, fs, n_draw=None, n_bootstrap=100, rng=None,
+def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
                        window=None, callback='tqdm', calculate=None):
     '''
     Calculate the normalized PSD across trials using a boostrapping algorithm
@@ -932,13 +932,15 @@ def psd_bootstrap_loop(x, fs, n_draw=None, n_bootstrap=100, rng=None,
 
     Parameters
     ----------
-    x : array
-        Signal to compute PSD noise floor over. Must be trial x time.
+    arrays : array or list of arrays
+        Signal to compute PSD noise floor over. Must be trial x time. If a list
+        of arrays is provided (e.g., one for each stimulus polarity), n_draw
+        will be balanced across the arrays.
     fs : float
         Sampling rate of signal
     n_draw : int
         Number of trials to draw on each bootstrap cycle. If None, draw all
-        samples (with replacement).
+        samples (with replacement). Must be a multiple of the number of arrays.
     n_bootstrap : int
         Number of bootstrap cycles.
     rng : instance of RandomState
@@ -961,22 +963,41 @@ def psd_bootstrap_loop(x, fs, n_draw=None, n_bootstrap=100, rng=None,
         rng = np.random.RandomState()
 
     cb = get_cb(callback)
-    c = csd(x, window=window)
-    i = np.arange(len(c))
+
+    if isinstance(arrays, np.ndarray):
+        arrays = [arrays]
+    if not isinstance(arrays, list):
+        arrays = list(arrays)
+    array_csd = [csd(x, window=window) for x in arrays]
+    array_i = [np.arange(len(x)) for x in array_csd]
+
+    n_draw_array = n_draw // len(arrays)
+    if n_draw_array * len(arrays) != n_draw:
+        raise ValueError('n_draw must be multiple of number of arrays')
 
     mean_psd_bs = []
     mean_psd_bs_rand = []
     plv_bs = []
 
     for j in range(n_bootstrap):
-        c_bs = c[rng.choice(i, n_draw, replace=True)]
-        random_phases = rng.uniform(0, 2 * np.pi, size=c_bs.shape)
-        c_bs_rand = np.abs(c_bs) * np.exp(-1j * random_phases)
+        # Draw equally from all arrays
+        c_bs = []
+        for i, c in zip(array_i, array_csd):
+            c_bs.append(c[rng.choice(i, n_draw_array, replace=True)])
+        c_bs = np.concatenate(c_bs, axis=0)
+
+        # Calculate mean PSD across the bootstrapped samples.
         mean_psd_bs.append(db(np.abs(c_bs.mean(axis=0))))
-        mean_psd_bs_rand.append(db(np.abs(c_bs_rand.mean(axis=0))))
+
+        # Calculate the phase-locking value.
         angle_bs = np.angle(c_bs)
         plv_bs.append(np.abs(np.mean(np.exp(-1j*angle_bs), axis=0)))
         cb((j + 1) / n_bootstrap)
+
+        # Randomize the phases to estimate noise floor.
+        random_phases = rng.uniform(0, 2 * np.pi, size=c_bs.shape)
+        c_bs_rand = np.abs(c_bs) * np.exp(-1j * random_phases)
+        mean_psd_bs_rand.append(db(np.abs(c_bs_rand.mean(axis=0))))
 
     plv_bs = np.vstack(plv_bs)
     mean_psd_bs_rand = np.vstack(mean_psd_bs_rand)
@@ -994,7 +1015,7 @@ def psd_bootstrap_loop(x, fs, n_draw=None, n_bootstrap=100, rng=None,
             'psd_norm_linear': dbi(psd_norm),
             'plv': plv,
         },
-        index=pd.Index(psd_freq(x, fs), name='frequency'),
+        index=pd.Index(psd_freq(arrays[0], fs), name='frequency'),
     )
 
 
