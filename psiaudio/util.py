@@ -978,6 +978,7 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
     mean_psd_bs = []
     mean_psd_bs_rand = []
     plv_bs = []
+    phase_bs = []
 
     for j in range(n_bootstrap):
         # Draw equally from all arrays
@@ -986,8 +987,9 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
             c_bs.append(c[rng.choice(i, n_draw_array, replace=True)])
         c_bs = np.concatenate(c_bs, axis=0)
 
-        # Calculate mean PSD across the bootstrapped samples.
+        # Calculate mean PSD and angle across the bootstrapped samples.
         mean_psd_bs.append(db(np.abs(c_bs.mean(axis=0))))
+        phase_bs.append(np.angle(c_bs.mean(axis=0)))
 
         # Calculate the phase-locking value.
         angle_bs = np.angle(c_bs)
@@ -1002,11 +1004,17 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
     plv_bs = np.vstack(plv_bs)
     mean_psd_bs_rand = np.vstack(mean_psd_bs_rand)
     mean_psd_bs = np.vstack(mean_psd_bs)
+    phase_bs = np.vstack(phase_bs)
 
     plv = plv_bs.mean(axis=0)
     psd_norm = (mean_psd_bs - mean_psd_bs_rand).mean(axis=0)
     psd_nf = mean_psd_bs_rand.mean(axis=0)
     psd = mean_psd_bs.mean(axis=0)
+    phase = phase_bs.mean(axis=0)
+
+    psd_std = mean_psd_bs.std(axis=0)
+    plv_std = plv_bs.std(axis=0)
+    phase_std = phase_bs.std(axis=0)
 
     return pd.DataFrame({
             'psd_nf': psd_nf,
@@ -1014,6 +1022,10 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
             'psd_norm': psd_norm,
             'psd_norm_linear': dbi(psd_norm),
             'plv': plv,
+            'phase': phase,
+            'psd_std': psd_std,
+            'plv_std': plv_std,
+            'phase_std': phase_std,
         },
         index=pd.Index(psd_freq(arrays[0], fs), name='frequency'),
     )
