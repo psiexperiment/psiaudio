@@ -122,13 +122,6 @@ class BaseCalibration:
         vdb = level - sensitivity + attenuation
         return 10**(vdb/20.0)
 
-    def get_mean_sf(self, flb, fub, level, attenuation=0):
-        frequencies = np.arange(flb, fub)
-        sf = self.get_sf(frequencies, level).mean(axis=0)
-        if np.isnan(sf):
-            raise ValueError('Requested range has some uncalibrated frequencies')
-        return sf
-
     def get_attenuation(self, frequency, voltage, level):
         return self.get_db(frequency, voltage)-level
 
@@ -313,18 +306,18 @@ class InterpCalibration(BaseFrequencyCalibration):
         value).
     '''
     def __init__(self, frequency, sensitivity, fixed_gain=0, phase=None,
-                 fill_value=np.nan, reference=None, attrs=None):
+                 reference=None, attrs=None):
         super().__init__(reference, attrs)
         self.frequency = np.asarray(frequency)
         self.sensitivity = np.asarray(sensitivity)
         self.fixed_gain = fixed_gain
         self._interp = interp1d(frequency, sensitivity, 'linear',
-                                bounds_error=False, fill_value=fill_value)
+                                bounds_error=False, fill_value='extrapolate')
         if phase is not None:
             self.phase = np.asarray(phase)
             self._interp_phase = interp1d(frequency, phase, 'linear',
                                           bounds_error=False,
-                                          fill_value=fill_value)
+                                          fill_value='extrapolate')
         else:
             self.phase = None
             self._interp_phase = None
@@ -332,7 +325,12 @@ class InterpCalibration(BaseFrequencyCalibration):
     def get_sens(self, frequency):
         # Since sensitivity is in dB(V), subtracting fixed_gain from
         # sensitivity will *increase* the sensitivity of the system.
-        frequency = np.asarray(frequency)
+        frequency = np.asarray(frequency, dtype=self.frequency.dtype)
+        f_min = self.frequency.min()
+        f_max = self.frequency.max()
+        if np.any(frequency < f_min) or np.any(frequency > f_max):
+            raise ValueError('Requested range has some uncalibrated frequencies. '
+                             f'Requested {frequency} Hz. Calibrated {f_min} to {f_max} Hz.')
         return self._interp(frequency)-self.fixed_gain
 
     def get_phase(self, frequency):
@@ -377,6 +375,18 @@ class InterpCalibration(BaseFrequencyCalibration):
         zi = signal.lfilter_zi(filt, [1])
         return filt, zi
 
+    def get_mean_sf(self, flb, fub, level, attenuation=0):
+        frequencies = np.arange(flb, fub)
+        sf = self.get_sf(frequencies, level)
+        if (flb < self.frequency.min()) or (fub > self.frequency.max()):
+            f_min = self.frequency.min()
+            f_max = self.frequency.max()
+            raise ValueError('Requested range has some uncalibrated frequencies. '
+                             f'Requested {flb} to {fub} Hz. Calibrated {f_min} to {f_max} Hz.')
+
+        sf_mean = sf.mean(axis=0)
+        return sf_mean
+
 
 class PointCalibration(BaseFrequencyCalibration):
 
@@ -402,6 +412,9 @@ class PointCalibration(BaseFrequencyCalibration):
         except IndexError:
             log.debug('Calibrated frequencies are %r', self.frequency)
             raise CalibrationError(f'{frequency} Hz not calibrated')
+
+    def get_mean_sf(self, flb, fub, level, attenuation=0):
+        raise ValueError('Not implemented for PointCalibration')
 
 
 if __name__ == '__main__':
