@@ -1029,7 +1029,8 @@ def delay(n, target):
 
 
 @coroutine
-def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
+def edges(min_samples, target, initial_state=False, fs='auto', detect='both',
+          min_events=0):
     '''
     Find the rising and falling edges of a binary (boolean) input. The output
     is an instance of `Events`. Even if no edges are detected, an `Events`
@@ -1050,6 +1051,12 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
         segment.
     detect : {'both', 'rising', 'falling'}
         Edge to detect.
+    min_events : int
+        Minimum number of events to accumulate before sending results to next
+        stage of pipeline. If 0, an `Events` object with 0 events will always
+        be created and sent to the next stage of the pipeline. This can be
+        important for downstream code that is updating results in real-time
+        (e.g., computing the event rate and/or plotting event times).
 
     Notes
     -----
@@ -1077,6 +1084,9 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
         if fs == 'auto':
             fs = None
 
+    events = []
+    events_s0 = s0
+
     while True:
         # Wait for new data to become available
         if new_samples.ndim == 1:
@@ -1090,17 +1100,19 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both'):
         samples = concat((prior_samples, new_samples), axis=-1)
         epochs = util.debounce_epochs(util.epochs(samples), min_samples)
 
-        events = []
         for lb, ub in epochs:
             if detect in ('rising', 'both') and lb > 0:
                 events.append(('rising', lb + s0))
             if detect in ('falling', 'both') and ub < samples.shape[-1]:
                 events.append(('falling', ub + s0))
 
-        events = Events(events, s0, s0 + n_samples, fs)
-        target(events)
+        s0 += n_samples
 
-        s0 += new_samples.shape[-1]
+        if len(events) >= min_events:
+            target(Events(events, events_s0, s0, fs))
+            events = []
+            events_s0 = s0
+
         prior_samples = samples[..., -min_samples:]
 
         new_samples = (yield).astype('bool')

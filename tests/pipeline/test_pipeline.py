@@ -384,14 +384,16 @@ def test_edges():
     # pipeline where data is incrementially obtained from the acquisitoin
     # process).
     def _test_pipeline(d, expected, debounce=2, initial_state=0,
-                       detect='both'):
+                       detect='both', min_events=0):
         actual = []
         pipe = pipeline.edges(min_samples=debounce, target=actual.append,
-                              initial_state=initial_state, detect=detect)
+                              initial_state=initial_state, detect=detect,
+                              min_events=min_events)
         for i in range(4):
             lb = i * 100
             ub = lb + 100
             pipe.send(d[..., lb:ub])
+        assert len(actual) == len(expected)
         for a, e in zip(actual, expected):
             try:
                 assert_events_equal(a, e)
@@ -424,8 +426,13 @@ def test_edges():
         pipeline.Events([], 298, 398, 1000),
     ]
     _test_pipeline(d, expected)
+    # Verify that setting min_events to 1 returns only the first event 
+    _test_pipeline(d, expected[:1], min_events=1)
+
     expected[0] = pipeline.Events([], -2, 98, 1000)
     _test_pipeline(d, expected, initial_state=1)
+    # Verify that setting min_events to 1 returns nothing 
+    _test_pipeline(d, [], initial_state=1, min_events=1)
 
     # Check change in first 10 samples.
     d = np.zeros((1, 400))
@@ -438,6 +445,7 @@ def test_edges():
         pipeline.Events([], 298, 398, 1000),
     ]
     _test_pipeline(d, expected)
+    _test_pipeline(d, [], min_events=3)
 
     # Now, check proper edge is reported.
     expected[0] = pipeline.Events([('falling', 10)], -2, 98, 1000)
