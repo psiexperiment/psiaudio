@@ -308,7 +308,7 @@ class InterpCalibration(BaseFrequencyCalibration):
     def __init__(self, frequency, sensitivity, fixed_gain=0, phase=None,
                  reference=None, attrs=None):
         super().__init__(reference, attrs)
-        self.frequency = np.asarray(frequency)
+        self.frequency = np.asarray(frequency).round(2)
         self.sensitivity = np.asarray(sensitivity)
         self.fixed_gain = fixed_gain
         self._interp = interp1d(frequency, sensitivity, 'linear',
@@ -328,9 +328,10 @@ class InterpCalibration(BaseFrequencyCalibration):
         frequency = np.asarray(frequency, dtype=self.frequency.dtype)
         f_min = self.frequency.min()
         f_max = self.frequency.max()
-        if np.any(frequency < f_min) or np.any(frequency > f_max):
+        m = (frequency < f_min) | (frequency > f_max)
+        if m.any():
             raise ValueError('Requested range has some uncalibrated frequencies. '
-                             f'Requested {frequency} Hz. Calibrated {f_min} to {f_max} Hz.')
+                             f'Requested {frequency[m]} Hz. Calibrated {f_min} to {f_max} Hz.')
         return self._interp(frequency)-self.fixed_gain
 
     def get_phase(self, frequency):
