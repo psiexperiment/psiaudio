@@ -550,3 +550,32 @@ def test_rebuffering(fs):
 
     # Make sure epochs 1 ... end are equal to epoch 0
     assert np.all(np.equal(epochs[:, [0]], epochs))
+
+
+def test_queue_speed(fs, benchmark):
+
+    def setup():
+        n_trials = 512
+        duration = 5e-3
+        isi = 1/40
+        queue, _, _, _, _ = \
+            make_queue(fs, 'interleaved', [1e3, 2e3, 4e3, 8e3, 16e3], n_trials, duration=duration, isi=isi)
+
+        block_size = 4096
+        total_duration_sec = 5 * n_trials * (duration + isi)
+        total_duration_samples = int(round(total_duration_sec * fs))
+        n_blocks = total_duration_samples // block_size
+
+        return (n_blocks, block_size, queue), {}
+
+    def profiler(n_blocks, block_size, queue):
+        segments = []
+        for i in range(n_blocks):
+            segments.append(queue.pop_buffer(block_size))
+        return n_blocks, block_size, segments
+
+    n_blocks, block_size, segments = benchmark.pedantic(profiler, setup=setup, rounds=1, iterations=1)
+
+    assert len(segments) == n_blocks
+    assert segments[0].shape[-1] == block_size
+    assert segments[-1].shape[-1] == block_size
