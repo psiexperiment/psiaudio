@@ -141,6 +141,7 @@ def test_fifo_queue_pause_with_requeue(fs):
     # extractor.
     queue.pause(round(0.5 * fs) / fs)
     extractor.send(waveform[:round(0.5 * fs)])
+    time.sleep(0.1)
 
     # We need to add 1 to account for the very first trial.
     n_queued = int(np.floor(2 / actual_isi)) + 1
@@ -162,6 +163,7 @@ def test_fifo_queue_pause_with_requeue(fs):
     waveform = queue.pop_buffer(samples)
     assert np.all(waveform == 0)
     extractor.send(waveform)
+    time.sleep(0.1)
     assert len(waveforms) == (n_captured + 1)
 
     # Verify removal event is properly notifying the timestamp
@@ -201,6 +203,8 @@ def test_fifo_queue_pause_with_requeue(fs):
     k1_left, k2_left = _adjust_remaining(k1_left, k2_left, n_queued)
 
     extractor.send(waveform)
+    time.sleep(0.1)
+
     assert queue.remaining_trials(k1) == k1_left
     assert queue.remaining_trials(k2) == k2_left
     keys += [i['key'] for i in conn]
@@ -284,9 +288,10 @@ def test_fifo_queue_pause_resume_timing(fs):
     conn.clear()
     queue.pause(0.1025)
     queue.pop_buffer(samples)
+    time.sleep(0.1)
     queue.resume(0.6725)
     queue.pop_buffer(samples)
-    time.sleep(0.2)
+    time.sleep(0.1)
     t0 = [i['t0'] for i in conn]
     assert t0[0] == round(0.6725 * fs) / fs
 
@@ -359,7 +364,7 @@ def test_interleaved_fifo_queue_ordering(fs):
 
     waveform = queue.pop_buffer(samples)
     extractor.send(waveform)
-    time.sleep(0.1)
+    time.sleep(0.2)
     assert queue_empty
 
     # Verify that keys are ordered properly
@@ -406,6 +411,7 @@ def test_queue_continuous_tone(fs):
 def test_future_pause(fs):
     queue, conn, rem_conn, _, _ = make_queue(fs, 'FIFO', [1e3, 5e3], 100)
     queue.pop_buffer(1000)
+    time.sleep(0.1)
     # This is OK
     queue.pause(1000 / fs)
     queue.resume(1000 / fs)
@@ -434,8 +440,10 @@ def test_queue_partial_capture(fs):
     samples = int(fs)
     tone_samples = t1.n_samples_remaining()
     w1 = queue.pop_buffer(int(tone_samples / 2))
+    time.sleep(0.1)
     queue.pause(0.5 * tone_samples / fs)
     w2 = queue.pop_buffer(samples)
+    time.sleep(0.1)
     extractor.send(w1)
     extractor.send(w2)
     time.sleep(0.1)
@@ -448,6 +456,7 @@ def test_remove_keys(fs):
     queue, conn, _, keys, tones = make_queue(fs, 'FIFO', frequencies, 100)
     queue.remove_key(keys[1])
     queue.pop_buffer(int(fs))
+    time.sleep(0.1)
     queue.remove_key(keys[0])
     queue.pop_buffer(int(fs))
     time.sleep(0.1)
@@ -458,6 +467,7 @@ def test_remove_keys(fs):
     # Should generate all remaining queued trials. Make sure it properly
     # exits the queue.
     queue.pop_buffer((int(5 * 100 / rate * fs)))
+    time.sleep(0.1)
     counts = Counter(c['key'] for c in conn)
     assert keys[1] not in counts
     assert counts[keys[0]] == int(rate)
@@ -470,6 +480,7 @@ def test_remove_keys_with_no_auto_decrement(fs):
     queue, conn, _, keys, tones = make_queue(fs, 'FIFO', frequencies, 100)
     queue.remove_key(keys[1])
     queue.pop_buffer(10 * int(fs), decrement=False)
+    time.sleep(0.1)
     queue.remove_key(keys[0])
     for key in keys[2:]:
         queue.remove_key(key)
@@ -477,6 +488,7 @@ def test_remove_keys_with_no_auto_decrement(fs):
     # Should generate all remaining queued trials. Make sure it properly
     # exits the queue.
     queue.pop_buffer((int(5 * 100 / rate * fs)), decrement=False)
+    time.sleep(0.1)
     counts = Counter(c['key'] for c in conn)
     assert keys[1] not in counts
     assert counts[keys[0]] == 10 * int(rate)
@@ -489,8 +501,10 @@ def test_get_closest_key(fs):
     queue, conn, _, keys, tones = make_queue(fs, 'FIFO', frequencies, 100)
     assert queue.get_closest_key(1) is None
     queue.pop_buffer(int(fs))
+    time.sleep(0.1)
     assert queue.get_closest_key(1) == keys[0]
     queue.pop_buffer(int(fs))
+    time.sleep(0.1)
     assert queue.get_closest_key(1) == keys[0]
     assert queue.get_closest_key(2) == keys[1]
 
@@ -559,6 +573,7 @@ def test_rebuffering(fs):
 
     # Clear all remaining trials
     extractor.send(queue.pop_buffer(15 * int(fs)))
+    time.sleep(0.1)
 
     # Check that we have the expected number of epochs acquired
     #assert len(waveforms) == (len(frequencies) * trials)
