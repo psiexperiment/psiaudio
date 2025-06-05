@@ -3,6 +3,7 @@ import pytest
 from collections import Counter, deque
 
 import numpy as np
+import time
 
 from psiaudio.calibration import FlatCalibration
 from psiaudio.pipeline import extract_epochs
@@ -93,6 +94,7 @@ def test_fifo_queue_pause_with_requeue(fs):
                                buffer_size=0,
                                epoch_size=15e-3,
                                target=waveforms.extend)
+    time.sleep(0.1)
 
     # Track number of trials remaining
     k1_left, k2_left = 100, 100
@@ -117,6 +119,7 @@ def test_fifo_queue_pause_with_requeue(fs):
     assert np.all(waveform[t1_lb:t1_lb + duration_samples] == t1_waveform)
     assert np.all(waveform[t2_lb:t2_lb + duration_samples] == t2_waveform)
 
+    time.sleep(0.1)
     assert len(conn) == np.ceil(2 / actual_isi)
     assert len(rem_conn) == 0
     keys = [i['key'] for i in conn]
@@ -184,6 +187,7 @@ def test_fifo_queue_pause_with_requeue(fs):
     k1_left, k2_left = _adjust_remaining(k1_left, k2_left, n_queued)
 
     extractor.send(waveform)
+    time.sleep(0.1)
 
     assert len(conn) == np.floor(1 / actual_isi) + 1
     assert queue.remaining_trials(k1) == k1_left
@@ -230,6 +234,7 @@ def test_queue_isi_with_pause(fs):
     duration = 1
     samples = round(duration * fs)
     queue.pop_buffer(samples)
+    time.sleep(0.1)
     expected_n = int(duration / isi) + 1
     assert len(conn) == expected_n
 
@@ -242,8 +247,10 @@ def test_queue_isi_with_pause(fs):
     # Resume after `duration` seconds. Note that tokens resume *immediately*.
     queue.resume()
     queue.pop_buffer(samples)
+    time.sleep(0.1)
     assert len(conn) == np.ceil(2 * duration / isi)
     queue.pop_buffer(samples)
+    time.sleep(0.1)
     assert len(conn) == np.ceil(3 * duration / isi)
 
     times = [u['t0'] for u in conn]
@@ -279,6 +286,7 @@ def test_fifo_queue_pause_resume_timing(fs):
     queue.pop_buffer(samples)
     queue.resume(0.6725)
     queue.pop_buffer(samples)
+    time.sleep(0.2)
     t0 = [i['t0'] for i in conn]
     assert t0[0] == round(0.6725 * fs) / fs
 
@@ -308,6 +316,7 @@ def test_fifo_queue_ordering(fs):
 
     waveform = queue.pop_buffer(samples)
     extractor.send(waveform)
+    time.sleep(0.1)
     assert queue_empty
 
     metadata = list(conn)
@@ -350,6 +359,7 @@ def test_interleaved_fifo_queue_ordering(fs):
 
     waveform = queue.pop_buffer(samples)
     extractor.send(waveform)
+    time.sleep(0.1)
     assert queue_empty
 
     # Verify that keys are ordered properly
@@ -428,6 +438,7 @@ def test_queue_partial_capture(fs):
     w2 = queue.pop_buffer(samples)
     extractor.send(w1)
     extractor.send(w2)
+    time.sleep(0.1)
 
     assert len(waveforms) == 0
 
@@ -439,6 +450,7 @@ def test_remove_keys(fs):
     queue.pop_buffer(int(fs))
     queue.remove_key(keys[0])
     queue.pop_buffer(int(fs))
+    time.sleep(0.1)
     counts = Counter(c['key'] for c in conn)
     assert counts[keys[0]] == int(rate)
     assert counts[keys[2]] == int(rate)
@@ -510,12 +522,16 @@ def test_rebuffering(fs):
 
     # Remove 5e-3 sec of the waveform
     extractor.send(queue.pop_buffer(tone_samples))
+    time.sleep(0.1)
 
     # Now, pause the queue at 5e-3 sec, remove 10e-3 worth of samples, and then
     # resume.
     queue.pause(tone_duration)
     extractor.send(queue.pop_buffer(tone_samples*2))
+    time.sleep(0.1)
+
     queue.resume()
+    time.sleep(0.1)
 
     # Pull off one additonal second.
     new_ts = queue.get_ts()
@@ -529,6 +545,7 @@ def test_rebuffering(fs):
     keep_samples = int(round(keep * fs))
     w = queue.pop_buffer(int(fs))
     extractor.send(w[:keep_samples])
+    time.sleep(0.1)
     assert queue.get_ts() == pytest.approx(1.015, 4)
 
     # This will result in pausing in the middle of a tone burst. This ensures
@@ -537,6 +554,7 @@ def test_rebuffering(fs):
     assert len(rem_conn) == 0
     queue.pause(tone_duration + 1.0)
     queue.resume(tone_duration + 1.0)
+    time.sleep(0.1)
     assert len(rem_conn) == 1
 
     # Clear all remaining trials
@@ -574,7 +592,7 @@ def test_queue_speed(fs, benchmark):
             segments.append(queue.pop_buffer(block_size))
         return n_blocks, block_size, segments
 
-    n_blocks, block_size, segments = benchmark.pedantic(profiler, setup=setup, rounds=1, iterations=1)
+    n_blocks, block_size, segments = benchmark.pedantic(profiler, setup=setup, rounds=5, iterations=1)
 
     assert len(segments) == n_blocks
     assert segments[0].shape[-1] == block_size
