@@ -403,20 +403,22 @@ class AbstractSignalQueue:
         waveform is returned, the remaining part will be returned on subsequent
         calls to this function.
         '''
-        waveforms = []
+        o = 0
+        waveform = np.empty(samples)
         while samples > 0:
             try:
-                waveform = self._pop_buffer(samples, decrement)
+                w = self._pop_buffer(samples, decrement)
+                s = w.shape[-1]
+                waveform[o:o+s] = w
+                o += s
+                samples -= s
+                self._samples += s
             except QueueEmptyError:
-                log.info('Queue is empty')
-                waveform = np.zeros(samples)
+                waveform[o:] = 0
+                self._samples += samples
                 self._empty = True
-                self._notify('empty', {})
-            samples -= len(waveform)
-            self._samples += len(waveform)
-            waveforms.append(waveform)
-        waveform = np.concatenate(waveforms, axis=-1)
-        log.trace('Generated %d samples', len(waveform))
+                self.notifier.notify('empty', {})
+                samples = 0
         return waveform
 
     def _pop_buffer(self, samples, decrement):
