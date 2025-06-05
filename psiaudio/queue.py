@@ -5,9 +5,10 @@ from collections import Counter
 import copy
 import itertools
 import uuid
+import time
 
+from collections import deque
 import numpy as np
-import queue
 import threading
 
 
@@ -28,7 +29,7 @@ def as_iterator(x):
 class NotifierQueue:
 
     def __init__(self):
-        self.queue = queue.Queue()
+        self.queue = deque()
         self.worker_thread = threading.Thread(target=self.run, daemon=True)
         self.worker_thread.start()
 
@@ -46,18 +47,15 @@ class NotifierQueue:
         self._notifiers[event].append(callback)
 
     def notify(self, event, info):
-        self.queue.put_nowait((event, info))
+        self.queue.append((event, info))
 
     def run(self):
         while True:
-            try:
-                event, info = self.queue.get(timeout=1)
+            while self.queue:
+                event, info = self.queue.popleft()
                 for cb in self._notifiers[event]:
                     cb(info)
-            except queue.Empty:
-                pass
-            except Exception as e:
-                print(f"Worker: An unexpected error occurred in worker loop: {e}")
+            time.sleep(0.001)
 
     def join(self):
         self.queue.join()
