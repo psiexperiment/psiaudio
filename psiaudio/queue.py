@@ -224,7 +224,7 @@ class AbstractSignalQueue:
         self._t0 = t0
 
     def _add_source(self, source, trials, delays, duration, metadata):
-        key = uuid.uuid4()
+        key = str(uuid.uuid4())
         if duration is None:
             if isinstance(source, np.ndarray):
                 duration = source.shape[-1]/self._fs
