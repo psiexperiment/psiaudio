@@ -147,10 +147,8 @@ class AbstractSignalQueue:
             raise ValueError(f'Cannot rewind past last sample generated. ' \
                              'Requested {t:.3f}s, last sample was {self.get_ts():.3f}s.')
         self._samples = new_sample
-        log.debug('Rewound queue samples back to %d', self._samples)
 
     def pause(self, t=None):
-        log.debug('Pausing queue')
         self._paused = True
         if t is not None:
             self.cancel(t)
@@ -195,14 +193,10 @@ class AbstractSignalQueue:
             if key not in self._ordering:
                 self._ordering.insert(0, key)
 
-        log.debug('Need to requeue:: %r', dict(Counter(to_requeue)))
         trials = {k: self._data[k]['trials'] for k in self._data.keys()}
-        log.debug('Current trials:: %r', trials)
         for key, count in Counter(to_requeue).items():
-            log.debug('Adding %d trials for key %s back to queue', count, key)
             self._data[key]['trials'] += count
         trials = {k: self._data[k]['trials'] for k in self._data.keys()}
-        log.debug('Current trials:: %r', trials)
 
     def resume(self, t=None):
         """
@@ -216,7 +210,6 @@ class AbstractSignalQueue:
         if t is not None:
             self.rewind_samples(t, False)
         self._paused = False
-        log.debug('Resumed queue. Current timestamp is %.3f.', self.get_ts())
 
     def is_empty(self):
         return self._empty
