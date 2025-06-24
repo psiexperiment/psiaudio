@@ -1013,6 +1013,7 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
     phase = phase_bs.mean(axis=0)
 
     psd_std = mean_psd_bs.std(axis=0)
+    psd_nf_std = mean_psd_bs_rand.std(axis=0)
     plv_std = plv_bs.std(axis=0)
     phase_std = phase_bs.std(axis=0)
 
@@ -1024,6 +1025,7 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
             'plv': plv,
             'phase': phase,
             'psd_std': psd_std,
+            'psd_nf_std': psd_nf_std,
             'plv_std': plv_std,
             'phase_std': phase_std,
         },
