@@ -4,21 +4,25 @@ import pandas as pd
 from . import util
 
 
-def efr_bs_verhulst(x, fs, fm, n_harmonics, n_bootstrap=20, n_draw=None,
-                    rng=None, window=None):
+def efr_bs_verhulst(arrays, fs, fm, n_harmonics=None, n_bootstrap=20, n_draw=None,
+                    rng=None, window=None, max_harmonic=None):
     '''
     Calculate the EFR amplitude using a boostrapping algorithm
 
     Parameters
     ----------
-    x : array
-        Signal to compute EFR amplitude.
+    arrays : array or list of arrays
+        Signal to compute PSD noise floor over. Must be trial x time. If a list
+        of arrays is provided (e.g., one for each stimulus polarity), n_draw
+        will be balanced across the arrays.
     fs : float
         Sampling rate of signal.
     fm : float
         Modulation frequency.
     n_harmonics : int
-        Number of harmonics (including fundamental) to sum.
+        Number of harmonics (including fundamental) to sum. If None, all
+        harmonics up to `max_harmonic` are summed. An error is raised if both
+        `n_harmonics` and `max_harmonic` is set to None.
     n_bootstrap : int Number of bootstrap cycles.  n_draw : {None, int}
         Number of trials to draw (with replacement) on each bootstrap cycle. If
         None, set to the total number of trials provided.
@@ -27,6 +31,9 @@ def efr_bs_verhulst(x, fs, fm, n_harmonics, n_bootstrap=20, n_draw=None,
         Useful when you need to "freeze" results (e.g., for publication).
     window : {None, string}
         Type of window to use when calculating bootstrapped PSD.
+    max_harmonic : float
+        Maximum harmonic frequency to compute up to. This can be set to the
+        Nyquist frequency.
 
     Result
     ------
@@ -46,15 +53,31 @@ def efr_bs_verhulst(x, fs, fm, n_harmonics, n_bootstrap=20, n_draw=None,
     This implements the EFR analysis algorithm first described in Vasilkov et
     al. 2021.
     '''
+    if n_harmonics is None and max_harmonic is None:
+        raise ValueError('Must provide n_harmonics or max_harmonic')
+    elif n_harmonics is None:
+        # Calculate number of harmonics to sum given max_harmonic and the
+        # modulation frequency.
+        n_harmonics = int(max_harmonic // fm)
+        print(n_harmonics)
+
     if rng is None:
         rng = np.random.RandomState()
     if n_draw is None:
         n_draw =len(x)
 
-    x = np.asarray(x)
-    i = np.arange(len(x))
+    if isinstance(arrays, np.ndarray):
+        arrays = [arrays]
+    if not isinstance(arrays, list):
+        arrays = list(arrays)
+    array_csd = [util.csd(x, window=window) for x in arrays]
+    array_i = [np.arange(len(x)) for x in array_csd]
 
-    freq_step = fs / x.shape[-1]
+    n_draw_array = n_draw // len(arrays)
+    if n_draw_array * len(arrays) != n_draw:
+        raise ValueError('n_draw must be multiple of number of arrays')
+
+    freq_step = fs / arrays[0].shape[-1]
 
     # Make sure that our frequencies of interest fall on integer multiples of
     # the frequency spacing of the FFT. We could potentially work around this,
@@ -65,8 +88,13 @@ def efr_bs_verhulst(x, fs, fm, n_harmonics, n_bootstrap=20, n_draw=None,
     # Calculate average complex spectral density for each boostrap.
     csd_bs = []
     for _ in range(n_bootstrap):
-        x_bs_csd = util.csd(x[rng.choice(i, n_draw)].mean(axis=0))
-        csd_bs.append(x_bs_csd)
+        # Draw equally from all arrays
+        c_bs = []
+        for i, c in zip(array_i, array_csd):
+            c_bs.append(c[rng.choice(i, n_draw_array, replace=True)])
+        c_bs = np.concatenate(c_bs, axis=0).mean(axis=0)
+
+        csd_bs.append(c_bs.mean(axis=0))
     csd_bs = np.vstack(csd_bs)
 
     # Indices of the noise bins relative to the bin containing the harmonic.
@@ -97,6 +125,6 @@ def efr_bs_verhulst(x, fs, fm, n_harmonics, n_bootstrap=20, n_draw=None,
     psd_bs = pd.DataFrame(
         np.abs(csd_bs),
         index=pd.Index(range(n_bootstrap), name='bootstrap'),
-        columns=pd.Index(util.psd_freq(x, fs), name='frequency'),
+        columns=pd.Index(util.psd_freq(arrays[0], fs), name='frequency'),
     )
     return efr.rename('efr_amplitude'), result, psd_bs
