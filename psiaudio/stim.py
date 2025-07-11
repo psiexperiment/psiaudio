@@ -1680,3 +1680,17 @@ def ramped_tone(fs, frequency, level, duration, rise_time=None,
     env = envelope(window=window, fs=fs, rise_time=rise_time,
                    duration=duration)
     return carrier * env
+
+
+def apply_sam_envelope(waveform, fs, depth, fm, delay, equalize):
+    env = sam_envelope(offset=0, samples=len(waveform), fs=fs, depth=depth,
+                       fm=fm, delay=delay, equalize=True)
+    return env * waveform
+
+
+def apply_cos2envelope(waveform, fs, rise_time, duration=None, start_time=0):
+    if duration is None:
+        duration = len(waveform)/fs
+    env = cos2envelope(fs=fs, duration=duration, rise_time=rise_time, offset=0,
+                       start_time=start_time, samples=len(waveform))
+    return env * waveform
