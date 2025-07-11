@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from . import util
-from .stim import apply_max_correction
+from .stim import apply_max_correction, fast_cache
 
 
 ################################################################################
@@ -339,6 +339,7 @@ class InterpCalibration(BaseFrequencyCalibration):
             raise ValueError('No phase correction data available')
         return self._interp_phase(frequency)
 
+    @fast_cache
     def make_eq_filter(self, fs, fl=None, fh=None, window='hann', ntaps=1001,
                        max_correction=30, target_level=80, target_rms=1):
         '''
@@ -360,17 +361,17 @@ class InterpCalibration(BaseFrequencyCalibration):
 
         if fl == 1:
             freq = np.concatenate(([0], freq))
-            sf = np.pad(sf, (1, 0))
+            sf = np.concatenate(([0], sf))
         elif fl > 1:
-            freq = np.concatenate(([0, fl], freq))
-            sf = np.pad(sf, (2, 0))
+            freq = np.concatenate(([0, fl-1], freq))
+            sf = np.concatenate(([0, 0], sf))
 
         if fh == ((fs / 2) - 1):
             freq = np.concatenate((freq, [fs/2]))
-            sf = np.pad(sf, (0, 1))
+            sf = np.concatenate((sf, [0]))
         if fh < ((fs / 2) - 1):
-            freq = np.concatenate((freq, [fh, fs/2]))
-            sf = np.pad(sf, (0, 2))
+            freq = np.concatenate((freq, [fh+1, fs/2]))
+            sf = np.concatenate((sf, [0, 0]))
 
         filt = signal.firwin2(ntaps, freq=freq, gain=sf, window=window, fs=fs)
         zi = signal.lfilter_zi(filt, [1])
