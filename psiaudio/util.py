@@ -841,6 +841,46 @@ def check_interleaved_octaves(freqs, min_octaves=1):
     return not np.any(octaves < (min_octaves * 0.95))
 
 
+def octave_band_freqs(fc, octaves):
+    """
+    Calculate frequency limits of a band given center frequency and width in octaves.
+
+    The center frequency is the geometric mean of the upper and lower frequency
+    limits.
+
+    Parameters
+    ----------
+    fc : float
+        Center frequency of band.
+    octaves : float
+        Bandwidth in octaves.
+
+    Returns
+    -------
+    tuple: A tuple containing the lower and upper frequencies.
+
+    Examples
+    --------
+    >>> fl, fh = octave_band_freqs(8e3, 1/8)
+    >>> print(f'{fl:.0f} to {fh:.0f}'
+    7660 to 8354
+
+    >>> fl, fh = octave_band_freqs(8, 1/8)
+    >>> print(f'{fl:.2f} to {fh:.2f}'
+    7.66 to 8.35
+    """
+    # Calculate the frequency factor based on the octave bandwidth
+    # The bandwidth is halved because the center frequency is the geometric mean,
+    # meaning it's equidistant multiplicatively from the lower and upper bounds.
+    frequency_factor = 2**(octaves / 2.0)
+
+    # Calculate the lower and upper frequency bounds
+    fl = fc / frequency_factor
+    fh = fc * frequency_factor
+
+    return fl, fh
+
+
 ################################################################################
 # Misc. signal manipulation functions
 ################################################################################
