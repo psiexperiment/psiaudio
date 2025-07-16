@@ -1160,6 +1160,18 @@ class SilenceFactory(Carrier):
     def reset(self):
         pass
 
+def silence(fs, duration):
+    '''
+    Utility function for generating silence
+
+    While this is a very simple function, it's provided to ensure consistency
+    in calculating the number of samples given sampling rate and duration when
+    using this in the context of other functions that actually generate a
+    waveform.
+    '''
+    samples = int(round(fs * duration))
+    return np.zeros(samples)
+
 
 ################################################################################
 # Square waveform
