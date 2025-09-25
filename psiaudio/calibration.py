@@ -345,6 +345,11 @@ class InterpCalibration(BaseFrequencyCalibration):
         '''
         Generate a FIR filter that can be used to equalize a waveform
 
+        Parameters
+        ----------
+        target_level : {None, float}
+            If None, FIR filter is configured so that 
+
         Returns
         -------
         '''
@@ -354,7 +359,13 @@ class InterpCalibration(BaseFrequencyCalibration):
             fh = self.frequency.max()
 
         freq = np.arange(fl, fh+1)
-        sf = self.get_sf(freq, target_level - util.db(target_rms))
+
+        if target_level is None:
+            sf_ref = self.get_mean_sf(fl, fh, 80)
+            sf_actual = self.get_sf(freq, 80)
+            sf = sf_ref / sf_actual
+        else:
+            sf = self.get_sf(freq, target_level - util.db(target_rms))
 
         if max_correction is not None:
             sf = apply_max_correction(sf, max_correction)

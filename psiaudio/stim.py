@@ -662,7 +662,7 @@ class BandlimitedNoiseFactory(Carrier):
         # Calculate the IIR filter if we are equalizing the noise.
         if equalize:
             self.iir, self.initial_iir_zi = \
-                _calculate_bandlimited_noise_iir(fs, calibration, fl, fh)
+                calibration.make_eq_filter(fs, fl, fh, target_level=None)
         else:
             self.iir = self.initial_iir_zi = None
 
