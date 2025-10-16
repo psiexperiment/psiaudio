@@ -353,33 +353,36 @@ class Cos2EnvelopeFactory(EnvelopeFactory):
 ################################################################################
 # SAM envelope
 ################################################################################
-@fast_cache
 def sam_eq_power(depth):
-    return (3.0/8.0*depth**2.0-depth+1.0)**0.5
+    return 1 / np.sqrt(3/8*depth**2-depth+1)
 
 
-@fast_cache
-def sam_eq_phase(delay, depth, direction):
+def sam_eq_phase(depth, direction='positive'):
+    if direction not in ('positive', 'negative'):
+        raise ValueError('Unsupported direction')
+
+    # Short-circuit to avoid division by zero error
     if depth == 0:
         return 0
-    z = 2.0/depth*sam_eq_power(depth)-2.0/depth+1
+
+    power = sam_eq_power(depth)
+    z = 2 / depth * (1 / power - 1 + depth / 2)
     phi = np.arccos(z)
-    return 2.0*np.pi-phi if direction == 1 else phi
+    return 2.0*np.pi-phi if direction == 'positive' else phi
 
 
-@fast_cache
 def _sam_envelope(offset, samples, fs, depth, fm, delay, eq_phase, eq_power):
     delay_n = np.clip(int(delay*fs)-offset, 0, samples)
     delay_n = int(np.round(delay_n))
     sam_n = samples-delay_n
 
     sam_offset = offset-delay_n
-    t = (np.arange(sam_n, dtype=np.double) + sam_offset)/fs
-    sam_envelope = depth/2.0*np.cos(2.0*np.pi*fm*t+eq_phase)+1.0-depth/2.0
+    t = np.arange(sam_n, dtype=np.double) / fs
+    sam_envelope = depth/2*np.cos(2*np.pi*fm*t+eq_phase)+1-depth/2
 
     # Ensure that we scale the waveform so that the total power remains equal
     # to that of an unmodulated token.
-    sam_envelope *= 1.0/eq_power
+    sam_envelope *= eq_power
 
     delay_envelope = np.ones(delay_n)
     return np.concatenate((delay_envelope, sam_envelope))
@@ -388,7 +391,7 @@ def _sam_envelope(offset, samples, fs, depth, fm, delay, eq_phase, eq_power):
 @fast_cache
 def sam_envelope(offset, samples, fs, depth, fm, delay, equalize):
     if equalize:
-        eq_phase = sam_eq_phase(delay, depth, 1)
+        eq_phase = sam_eq_phase(depth, 'positive')
         eq_power = sam_eq_power(depth)
     else:
         eq_phase = eq_power = 0
