@@ -100,7 +100,8 @@ mscale.register_scale(OctaveScale)
 
 def waterfall_plot(axes, waveforms, waterfall_level='level',
                    scale_method='mean', base_scale_multiplier=1, plotkw=None,
-                   x_transform=None, y_scale_bar_size=1):
+                   x_transform=None, y_scale_bar_size=1, label_offset_x=-0.05,
+                   label_fmt=lambda x: str(x)):
     '''
     Parameters
     ----------
@@ -131,7 +132,7 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
     text_trans = T.blended_transform_factory(axes.figure.transFigure,
                                              axes.transAxes)
 
-    limits = [(w.min(), w.max()) for w in waveforms]
+    limits = [(w.min(), w.max()) for w in waveforms if ~np.isnan(w).all()]
 
     if scale_method == 'mean':
         base_scale = np.mean(np.abs(np.array(limits))) * base_scale_multiplier
@@ -188,9 +189,11 @@ def waterfall_plot(axes, waveforms, waterfall_level='level',
         trans = T.blended_transform_factory(axes.transData, y_trans)
         transforms[l] = trans
 
-        axes.plot(t, w, transform=trans, **plotkw)
+        if ~np.isnan(w).all():
+            axes.plot(t, w, transform=trans, **plotkw)
+
         text_trans = T.blended_transform_factory(axes.transAxes, y_trans)
-        axes.text(-0.05, 0, str(l), transform=text_trans)
+        axes.text(label_offset_x, 0, label_fmt(l), transform=text_trans)
 
     axes.set_yticks([])
     axes.grid()
