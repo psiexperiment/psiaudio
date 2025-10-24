@@ -1086,7 +1086,7 @@ def sam_tone(fs, fc, fm, level, depth=1, phase=0, phase_lb=0, phase_ub=0,
 
     sf = sf * np.array([0.25, 0.5, 0.25])
     if eq_power:
-        sf /= sam_eq_power(depth)
+        sf *= sam_eq_power(depth)
 
     phase = np.array([phase_lb, phase, phase_ub])
 
