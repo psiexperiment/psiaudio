@@ -1618,7 +1618,7 @@ def _preprocess_stm(frequency, phase, amplitude=None, level=1,
 
     if calibration is not None:
         spectrum_level = util.band_to_spectrum_level(level, len(f))
-        sf = calibration.get_sf(f, spectrum_level)
+        sf = calibration.get_sf(f, spectrum_level).mean()
     else:
         sf = np.ones_like(f)
 
@@ -1678,7 +1678,7 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
         frequency and bandwidth of the noise. The upper and lower edges of the
         noise band will be configured so that they are equidistant from `fc` on
         an octave scale.
-    amplitude : {float, 1D array, 'white', 'pink'}
+    amplitude : {None, 'white', 'pink'}
         Amplitude of carrier frequencies
         TODO
     phase : {float, 1D array, 'random'}
