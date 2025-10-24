@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy import signal
 from scipy.io import wavfile
+from scipy.special import iv
 
 from . import weighting
 from . import util
@@ -1528,6 +1529,130 @@ class WavSequenceFactory(ContinuousWaveform):
 def wavs_from_path(fs, path, *args, **kwargs):
     return [WavFileFactory(fs, filename, *args, **kwargs) \
             for filename in Path(path).glob('*.wav')]
+
+
+################################################################################
+# STM
+################################################################################
+def _preprocess_stm(frequency, amplitude, phase):
+    f = np.asarray(frequency)
+    if amplitude == 'white':
+        a = np.sqrt(-2 * np.log(np.random.uniform(0, 1, f.shape)))
+    elif amplitude == 'pink':
+        a = np.sqrt(-2 * np.log(np.random.uniform(0, 1, f.shape))) / np.sqrt(f)
+    elif np.isscalar(amplitude):
+        a = np.full_like(f, amplitude)
+    else:
+        a = np.asarray(amplitude)
+
+    if phase == 'random':
+        p = np.random.uniform(0, 2*np.pi, f.shape)
+    elif np.isscalar(phase):
+        p = np.full_like(f, phase)
+    else:
+        p = np.asarray(phase)
+    return f, a, p
+
+
+def stm_classic(fs, frequency, amplitude=1, phase='random', depth=1, cps=4,
+                cpo=2, duration=1, mod_type='linear'):
+    samples = int(duration * fs)
+    frequency, amplitude, phase = _preprocess_stm(frequency, amplitude, phase)
+    amplitude *= np.sqrt(2)
+
+    t = np.arange(samples)[:, np.newaxis] / fs
+    carrier = amplitude * np.sin(2 * np.pi * frequency * t + phase)
+    phi = 2 * np.pi * cpo * np.log2(frequency / frequency.min())
+    if mod_type in ('linear', 'lin'):
+        env = 1 + depth * np.sin(2 * np.pi * cps * t + phi)
+    elif mod_type in ('exponential', 'exp'):
+        env = 10 ** (depth / 20 * np.sin(2 * np.pi * cps * t + phi))
+    w = carrier * env
+    w = w.sum(axis=1)
+    return t, w
+
+
+def stm(fs, frequency, amplitude=1, phase='random', depth=1, cps=4, cpo=2,
+        duration=1, mod_type='linear', n_sidebands=10):
+    '''
+    Generates linear or exponential spectro-temporal modulations using an
+    inverse FFT approach.
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate
+    frequency : 1D array
+        Carrier frequencies
+    amplitude : {float, 1D array, 'white', 'pink'}
+        Amplitude of carrier frequencies
+        TODO
+    phase : {float, 1D array, 'random'}
+        Phase of carrier frequencies
+        TODO
+    depth : float
+        If mod_type is exponential, depth is in dB, otherwise fractional on the
+        scale 0 to 1.
+    cps : float (Hz)
+        Cycles per second of modulation.
+    cpo : float (Hz)
+        Cycles per octave of modulation.
+    duration : float (sec)
+        Duration of stimulus.
+    mod_type : {'linear', 'lin', 'exponential', 'exp'}
+        How depth of the modulation is generated.
+    n_sidebands : int
+        Number of sidebands for approximating the classic approach to
+        spectrotemporal modulation.
+
+    Note
+    ----
+    For exponential modulation, implements the algorithm described in J.
+    Acoust. Soc. Am. 149, 1434-1443 (2021) https://doi.org/10.1121/10.0003604
+    (Stavropoulos et al.).
+    '''
+    N = int(duration * fs)
+    df = fs / N
+
+    if int(df) != df:
+        raise ValueError('Duration must be an integer multiple of sampling rate')
+
+    frequency, amplitude, phase = _preprocess_stm(frequency, amplitude, phase)
+
+    # Keep only real part of spectrum plus DC
+    csd = np.zeros(int(N/2 + 1), dtype=np.complex128)
+    fi = (frequency / df).astype('i')
+
+    # This defines the phase shift with increasing frequency (i.e., the
+    # spectralPhase parameter in the SuppPub1.m file)
+    phi = 2 * np.pi * cpo * np.log2(frequency / frequency.min())
+
+    if mod_type in ('linear', 'lin'):
+        fu = ((frequency + cps) / df).astype('i')
+        fl = ((frequency - cps) / df).astype('i')
+        csd[fi] += amplitude * np.exp(1j * phase)
+        csd[fu] += 0.5 * depth * amplitude * np.exp(1j * (phase + phi))
+        csd[fl] += 0.5 * depth * amplitude * np.exp(1j * (phase - phi))
+    elif mod_type in ('exponential', 'exp'):
+        M_prime = (depth / 20) * np.log(10)
+        # Even bands (including center frequency since when k=0, everything
+        # collapses to the definition for the base in table II)
+        k = np.arange(-n_sidebands, n_sidebands+1, 2)[:, np.newaxis]
+        ki = ((frequency + k * cps) / df).astype('i')
+        c = ((-1)**(k/2)) * iv(np.abs(k), M_prime) * amplitude * \
+            np.exp(1j * (phase + k * phi + np.pi/2))
+        # Use add.at since ki can have duplicate indices when modulation
+        # sidebands overlap for some carriers).
+        np.add.at(csd, ki, c)
+
+        ## Odd bands
+        k = np.arange(-(n_sidebands-1), n_sidebands, 2)[:, np.newaxis]
+        ki = ((frequency + k * cps) / df).astype('i')
+        c = ((-1)**((k-1)/2)) * iv(np.abs(k), M_prime) * amplitude * \
+            np.exp(1j * (phase - np.pi/2 + k * phi + np.pi/2))
+        np.add.at(csd, ki, c)
+
+    return util.csd_to_signal(csd)
 
 
 ################################################################################
