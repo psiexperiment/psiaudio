@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy import signal
 from scipy.io import wavfile
+from scipy.stats import rayleigh
 from scipy.special import iv
 
 from . import weighting
@@ -1604,7 +1605,8 @@ def wavs_from_path(fs, path, *args, **kwargs):
 ################################################################################
 # STM
 ################################################################################
-def _preprocess_stm(frequency, amplitude, phase):
+def _preprocess_stm(frequency, phase, amplitude=None, level=1,
+                    calibration=None):
     if isinstance(frequency, dict):
         if 'fc' in frequency:
             fc = frequency['fc']
@@ -1614,14 +1616,20 @@ def _preprocess_stm(frequency, amplitude, phase):
     else:
         f = np.asarray(frequency)
 
-    if amplitude == 'white':
-        a = np.sqrt(-2 * np.log(np.random.uniform(0, 1, f.shape)))
-    elif amplitude == 'pink':
-        a = np.sqrt(-2 * np.log(np.random.uniform(0, 1, f.shape))) / np.sqrt(f)
-    elif np.isscalar(amplitude):
-        a = np.full_like(f, amplitude)
+    if calibration is not None:
+        spectrum_level = util.band_to_spectrum_level(level, len(f))
+        sf = calibration.get_sf(f, spectrum_level)
     else:
-        a = np.asarray(amplitude)
+        sf = np.ones_like(f)
+
+    if amplitude == 'white':
+        a = sf * rayleigh.rvs(0, 1/np.sqrt(np.pi/2), size=f.shape)
+    elif amplitude == 'pink':
+        a = sf * rayleigh.rvs(0, 1/np.sqrt(np.pi/2), size=f.shape) / np.sqrt(f)
+    elif amplitude is None:
+        a = sf
+    else:
+        raise ValueError(f'Unrecognized option for amplitude: "{amplitude}"')
 
     if phase == 'random':
         p = np.random.uniform(0, 2*np.pi, f.shape)
@@ -1650,8 +1658,9 @@ def stm_classic(fs, frequency, amplitude=1, phase='random', depth=1, cps=4,
     return t, w
 
 
-def stm(fs, frequency, amplitude=1, phase='random', depth=1, cps=4, cpo=2,
-        duration=1, mod_type='linear', n_sidebands=10):
+def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
+        cps=4, cpo=2, duration=1, mod_type='linear', n_sidebands=10,
+        calibration=None):
     '''
     Generates linear or exponential spectro-temporal modulations using an
     inverse FFT approach.
@@ -1702,17 +1711,19 @@ def stm(fs, frequency, amplitude=1, phase='random', depth=1, cps=4, cpo=2,
     if int(df) != df:
         raise ValueError('Duration must be an integer multiple of sampling rate')
 
-    frequency, amplitude, phase = _preprocess_stm(frequency, amplitude, phase)
+    frequency, amplitude, phase = _preprocess_stm(
+        frequency, phase, amplitude, level, calibration
+    )
 
     # Keep only real part of spectrum plus DC
     csd = np.zeros(int(N/2 + 1), dtype=np.complex128)
-    fi = (frequency / df).astype('i')
 
     # This defines the phase shift with increasing frequency (i.e., the
     # spectralPhase parameter in the SuppPub1.m file)
     phi = 2 * np.pi * cpo * np.log2(frequency / frequency.min())
 
     if mod_type in ('linear', 'lin'):
+        fi = (frequency / df).astype('i')
         fu = ((frequency + cps) / df).astype('i')
         fl = ((frequency - cps) / df).astype('i')
         csd[fi] += amplitude * np.exp(1j * phase)
@@ -1730,7 +1741,7 @@ def stm(fs, frequency, amplitude=1, phase='random', depth=1, cps=4, cpo=2,
         # sidebands overlap for some carriers).
         np.add.at(csd, ki, c)
 
-        ## Odd bands
+        # Odd bands
         k = np.arange(-(n_sidebands-1), n_sidebands, 2)[:, np.newaxis]
         ki = ((frequency + k * cps) / df).astype('i')
         c = ((-1)**((k-1)/2)) * iv(np.abs(k), M_prime) * amplitude * \
