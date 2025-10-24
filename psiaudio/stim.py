@@ -1136,6 +1136,64 @@ class SAMToneFactory(Carrier):
 
 
 ################################################################################
+# SFMTone
+################################################################################
+def sfm_tone(fs, fc, fm, level, fd, delay=0, polarity=1, calibration=None,
+             samples='auto', offset=0, duration=None, equalize=True):
+    '''
+    Generates a SFM (sinusoidally frequency modulated) tone
+
+    Parameters
+    ----------
+    fs : float
+        Sampling frequency (Hz).
+    fc : float
+        Center frequency (Hz).
+    fm : float
+        Modulation frequency (Hz).
+    level : float
+        The units of level depend on the calibration provided (e.g., typically
+        dB SPL). If no calibration is provided, this defines the RMS power of
+        the tone.
+    fd : float
+        Maximum deviation from center frequency.
+    delay : float
+        Delay, in seconds, before modulation begins.
+    equalize : bool
+        If True and the calibration is provided, ensure that the sidebands
+        (fc-fm, fc+fm) are adjusted to reflect the actual output of the speaker
+        at those frequencies. If not provided, the calibration at the carrier
+        frequency is used for both the carrier and modulation sidebands.
+
+    # TODO
+    '''
+
+    if samples == 'auto' and duration is None:
+        raise ValueError('Must provide samples or duration')
+        s_total = int(fs * duration)
+    else:
+        s_total = samples
+
+
+    s_delay = int(fs * delay)
+    s_mod = s_total - s_delay
+
+    ifreq_ss = np.zeros(s_delay) + fc
+    t = np.arange(s_mod) / fs
+    ifreq_mod = fd * np.sin(fm * 2 * np.pi * t) + fc
+    ifreq = np.concatenate((ifreq_ss, ifreq_mod), axis=-1)
+
+    if calibration is not None:
+        sf = calibration.get_sf(ifreq, level)
+    else:
+        sf = level
+
+    phase = np.cumsum(ifreq) / fs
+    return np.sqrt(2) * sf * np.sin(2 * np.pi * phase)
+
+
+
+################################################################################
 # Silence
 ################################################################################
 class SilenceFactory(Carrier):
