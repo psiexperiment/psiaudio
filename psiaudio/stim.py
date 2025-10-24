@@ -1535,7 +1535,15 @@ def wavs_from_path(fs, path, *args, **kwargs):
 # STM
 ################################################################################
 def _preprocess_stm(frequency, amplitude, phase):
-    f = np.asarray(frequency)
+    if isinstance(frequency, dict):
+        if 'fc' in frequency:
+            fc = frequency['fc']
+            o = frequency['octaves']
+            flb, fub = np.round(2 ** (np.log2(fc) + [-o/2, o/2])).astype('i')
+            f = np.arange(flb, fub)
+    else:
+        f = np.asarray(frequency)
+
     if amplitude == 'white':
         a = np.sqrt(-2 * np.log(np.random.uniform(0, 1, f.shape)))
     elif amplitude == 'pink':
@@ -1582,8 +1590,15 @@ def stm(fs, frequency, amplitude=1, phase='random', depth=1, cps=4, cpo=2,
     ----------
     fs : float
         Sampling rate
-    frequency : 1D array
-        Carrier frequencies
+    frequency : {scalar, 1D array, dict}
+        Carrier frequencies in modulation. If a scalar, this will be an
+        amplitude-modulated tone. If an array, then the nature of the stimulus
+        will depend on the phase. If random, then this will be
+        spectrotemporally modulated noise. If a dictionary, then it should have
+        `fc` (center frequency) and `octaves` as keys, indicating the center
+        frequency and bandwidth of the noise. The upper and lower edges of the
+        noise band will be configured so that they are equidistant from `fc` on
+        an octave scale.
     amplitude : {float, 1D array, 'white', 'pink'}
         Amplitude of carrier frequencies
         TODO
