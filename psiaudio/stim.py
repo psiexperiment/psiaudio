@@ -1613,14 +1613,25 @@ def _preprocess_stm(frequency, phase, amplitude=None, level=1,
             o = frequency['octaves']
             flb, fub = np.round(2 ** (np.log2(fc) + [-o/2, o/2])).astype('i')
             f = np.arange(flb, fub)
+            if 'rolloff_octaves' in frequency:
+                rolloff_octaves = frequency['rolloff_octaves']
+                rolloff = frequency['rolloff']
+                flb, fub = f.min(), f.max()
+                flb_full = int(2**(np.log2(flb) - rolloff_octaves))
+                fub_full = int(2**(np.log2(fub) + rolloff_octaves))
+                f = np.arange(flb_full, fub_full)
+                window = np.ones_like(f, dtype=np.double)
+                window[f > fub] = (fub / f[f > fub]) ** rolloff
+                window[f < flb] = (f[f < flb] / flb) ** rolloff
     else:
         f = np.asarray(frequency)
+        window = np.ones_like(f)
 
     if calibration is not None:
         spectrum_level = util.band_to_spectrum_level(level, len(f))
-        sf = calibration.get_sf(f, spectrum_level).mean()
+        sf = calibration.get_sf(f, spectrum_level).mean() * window
     else:
-        sf = np.ones_like(f)
+        sf = np.ones_like(f) * window
 
     if amplitude == 'white':
         a = sf * rayleigh.rvs(0, 1/np.sqrt(np.pi/2), size=f.shape)
