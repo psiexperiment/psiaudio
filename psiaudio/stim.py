@@ -1603,7 +1603,7 @@ def wavs_from_path(fs, path, *args, **kwargs):
 
 
 ################################################################################
-# STM
+# STM - spectrotemporal modulation
 ################################################################################
 def _preprocess_stm(frequency, phase, amplitude=None, level=1,
                     calibration=None):
@@ -1653,6 +1653,14 @@ def _preprocess_stm(frequency, phase, amplitude=None, level=1,
 
 def stm_classic(fs, frequency, amplitude=1, phase='random', depth=1, cps=4,
                 cpo=2, duration=1, mod_type='linear'):
+    '''
+    Generates linear or exponential spectro-temporal modulations using the
+    classic approach of generating a waveform for each frequency and then
+    summing.
+
+    This approach is slow, and is meant only for reference to compare with the
+    faster `stm` approach.
+    '''
     samples = int(duration * fs)
     frequency, amplitude, phase = _preprocess_stm(frequency, amplitude, phase)
     amplitude *= np.sqrt(2)
@@ -1760,6 +1768,65 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
         np.add.at(csd, ki, c)
 
     return util.csd_to_signal(csd)
+
+
+################################################################################
+# SFM - sinusoidal frequency modulation
+################################################################################
+def sfm(fs, fc, fm, depth, duration, level, calibration=None, equalize=False,
+        max_correction=np.inf):
+    '''
+    Generates linear or exponential spectro-temporal modulations using an
+    inverse FFT approach.
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate.
+    fc : float
+        Carrier frequency.
+    fm : float
+        Modulation frequency (in same units as `fc`).
+    depth : float
+        Depth of modulation (in same units as `fm` and `fc`).
+    duration : float
+        Duration of waveform in seconds.
+    level : float
+        RMS level of stimulus. If no calibration is provided, this is assumed
+        to be in units of Volts.
+    calibration : {None, Calibration}
+        Instance of a psiaudio.calibration class that can be used to calculate
+        the amplitude of the waveform to obtain the desired level.
+    equalize : bool
+        If True, the calibration is used to compensate for changes in speaker
+        output as a function of frequency.
+    max_correction : float
+        If equalize is True, limit the amount, in dB, of the equalization.
+    '''
+
+    # Calculate instantaneous frequency of the signal.
+    n_samples = int(duration * fs)
+    t = np.arange(n_samples) / fs
+    ifreq = fc + depth * np.sin(2 * np.pi * fm * t)
+
+    # Convert to angular frequency and integrate to get phase.  fs is
+    # equivalent to multiplying by the period (i.e., dt).
+    phase = np.cumsum(2 * np.pi * ifreq) / fs
+
+    # Figure out scaling factor. If no calibration is provided, assume that
+    # level is specified in Vrms.
+    if (calibration is None) and equalize:
+        raise ValueError('Cannot equalize signal without calibration')
+    elif (calibration is None):
+        sf = level
+    elif equalize:
+        sf = calibration.get_sf(ifreq, level)
+        if max_correction is not None:
+            sf = apply_max_correction(sf, max_correction)
+    else:
+        sf = calibration.get_mean_sf(fc-depth, fc+depth, level)
+
+    return np.sqrt(2) * sf * np.cos(phase)
 
 
 ################################################################################
