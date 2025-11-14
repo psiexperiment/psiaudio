@@ -5,6 +5,9 @@ Generate FM, AM and SFM stimuli
 This demonstrates how to generate amplitude, frequency, and spectrotemporal
 modulated stimuli.
 '''
+import matplotlib.pyplot as plt
+import numpy as np
+
 from psiaudio import stim
 from psiaudio import util
 from psiaudio.calibration import FlatCalibration
@@ -15,7 +18,7 @@ def plot_waveform(w, fs):
     t = np.arange(len(w)) / fs
     axes[0].plot(t, w)
     axes[0].set_xlabel('Time (sec)')
-    axes[0].set_ylabel(f'Amplitude ({units})')
+    axes[0].set_ylabel(f'Amplitude (Pa)')
     axes[1].set_xlabel('Time (sec)')
     axes[1].set_ylabel('Frequency (kHz)')
     axes[1].specgram(w, Fs=fs);
@@ -75,3 +78,4 @@ w_fm = stim.sfm(fs, 4e3, 4, 100, 1, 60, FlatCalibration.from_spl(94))
 plot_waveform(w_fm, fs)
 plot_waveform(w_am, fs)
 plot_waveform(w_stm, fs)
+plt.show()

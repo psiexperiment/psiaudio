@@ -28,7 +28,7 @@ blocksize = 2048
 fs = 44100.0
 base_path = 'wav-files'
 wavfiles = wavs_from_path(fs, base_path)
-queue = BlockedRandomSignalQueue(fs)
+queue = BlockedRandomSignalQueue(fs=fs)
 
 
 ###############################################################################
