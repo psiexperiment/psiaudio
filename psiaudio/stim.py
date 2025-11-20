@@ -1605,7 +1605,7 @@ def wavs_from_path(fs, path, *args, **kwargs):
 ################################################################################
 # STM - spectrotemporal modulation
 ################################################################################
-def _preprocess_stm(frequency, phase, amplitude=None, level=1,
+def _preprocess_stm(frequency, phase='random', amplitude=None, level=1,
                     calibration=None):
     if isinstance(frequency, dict):
         if 'fc' in frequency:
@@ -1623,15 +1623,18 @@ def _preprocess_stm(frequency, phase, amplitude=None, level=1,
                 window = np.ones_like(f, dtype=np.double)
                 window[f > fub] = (fub / f[f > fub]) ** rolloff
                 window[f < flb] = (f[f < flb] / flb) ** rolloff
+            else:
+                window = np.ones_like(f)
     else:
         f = np.asarray(frequency)
         window = np.ones_like(f)
 
     if calibration is not None:
         spectrum_level = util.band_to_spectrum_level(level, len(f))
-        sf = calibration.get_sf(f, spectrum_level).mean() * window
+        base_sf = calibration.get_sf(f, spectrum_level).mean()
     else:
-        sf = np.ones_like(f) * window
+        base_sf = 1
+    sf = base_sf * window
 
     if amplitude == 'white':
         a = sf * rayleigh.rvs(0, 1/np.sqrt(np.pi/2), size=f.shape)
@@ -1648,11 +1651,12 @@ def _preprocess_stm(frequency, phase, amplitude=None, level=1,
         p = np.full_like(f, phase)
     else:
         p = np.asarray(phase)
-    return f, a, p
+    return f, a, p, base_sf
 
 
-def stm_classic(fs, frequency, amplitude=1, phase='random', depth=1, cps=4,
-                cpo=2, duration=1, mod_type='linear'):
+def stm_classic(fs, frequency, level=1, phase='random', amplitude='white',
+                depth=1, cps=4, cpo=2, duration=1, mod_type='linear',
+                calibration=None):
     '''
     Generates linear or exponential spectro-temporal modulations using the
     classic approach of generating a waveform for each frequency and then
@@ -1662,7 +1666,9 @@ def stm_classic(fs, frequency, amplitude=1, phase='random', depth=1, cps=4,
     faster `stm` approach.
     '''
     samples = int(duration * fs)
-    frequency, amplitude, phase = _preprocess_stm(frequency, amplitude, phase)
+    frequency, amplitude, phase, _ = _preprocess_stm(
+        frequency, phase, amplitude, level, calibration
+    )
     amplitude *= np.sqrt(2)
 
     t = np.arange(samples)[:, np.newaxis] / fs
@@ -1673,13 +1679,12 @@ def stm_classic(fs, frequency, amplitude=1, phase='random', depth=1, cps=4,
     elif mod_type in ('exponential', 'exp'):
         env = 10 ** (depth / 20 * np.sin(2 * np.pi * cps * t + phi))
     w = carrier * env
-    w = w.sum(axis=1)
-    return t, w
+    return w.sum(axis=1)
 
 
 def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
         cps=4, cpo=2, duration=1, mod_type='linear', n_sidebands=10,
-        calibration=None):
+        calibration=None, return_type='time'):
     '''
     Generates linear or exponential spectro-temporal modulations using an
     inverse FFT approach.
@@ -1717,6 +1722,8 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
     n_sidebands : int
         Number of sidebands for approximating the classic approach to
         spectrotemporal modulation.
+    return_type : {'time', 'csd'}
+        If 'time', returns the time-domain waveform. If 'csd'
 
     Note
     ----
@@ -1724,13 +1731,16 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
     Acoust. Soc. Am. 149, 1434-1443 (2021) https://doi.org/10.1121/10.0003604
     (Stavropoulos et al.).
     '''
+    if np.abs(depth) > 60:
+        raise ValueError('Not well behaved for large modulation depths')
+
     N = int(duration * fs)
     df = fs / N
 
     if int(df) != df:
         raise ValueError('Duration must be an integer multiple of sampling rate')
 
-    frequency, amplitude, phase = _preprocess_stm(
+    frequency, amplitude, phase, _ = _preprocess_stm(
         frequency, phase, amplitude, level, calibration
     )
 
@@ -1754,8 +1764,10 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
         # collapses to the definition for the base in table II)
         k = np.arange(-n_sidebands, n_sidebands+1, 2)[:, np.newaxis]
         ki = ((frequency + k * cps) / df).astype('i')
-        c = ((-1)**(k/2)) * iv(np.abs(k), M_prime) * amplitude * \
-            np.exp(1j * (phase + k * phi + np.pi/2))
+        sf = ((-1)**(k/2)) * iv(np.abs(k), M_prime)
+        p_sum = np.sum(sf ** 2)
+
+        c = sf * amplitude * np.exp(1j * (phase + k * phi + np.pi/2))
         # Use add.at since ki can have duplicate indices when modulation
         # sidebands overlap for some carriers).
         np.add.at(csd, ki, c)
@@ -1763,11 +1775,21 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
         # Odd bands
         k = np.arange(-(n_sidebands-1), n_sidebands, 2)[:, np.newaxis]
         ki = ((frequency + k * cps) / df).astype('i')
-        c = ((-1)**((k-1)/2)) * iv(np.abs(k), M_prime) * amplitude * \
-            np.exp(1j * (phase - np.pi/2 + k * phi + np.pi/2))
+        sf = ((-1)**((k-1)/2)) * iv(np.abs(k), M_prime)
+        p_sum += np.sum(sf ** 2)
+        c = sf * amplitude * np.exp(1j * (phase - np.pi/2 + k * phi + np.pi/2))
         np.add.at(csd, ki, c)
 
-    return util.csd_to_signal(csd)
+        # The square root of the sum of squares of the Bessel component gives
+        # us the scaling factor that we need to use to normalize the signal so
+        # that it always returns the same RMS power regardless of modulation
+        # depth.
+        csd /= np.sqrt(p_sum)
+
+    if return_type == 'time':
+        return util.csd_to_signal(csd)
+    else:
+        return csd
 
 
 ################################################################################
