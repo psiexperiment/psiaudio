@@ -1633,7 +1633,7 @@ def _preprocess_stm(frequency, phase='random', amplitude=None, level=1,
         spectrum_level = util.band_to_spectrum_level(level, len(f))
         base_sf = calibration.get_sf(f, spectrum_level).mean()
     else:
-        base_sf = 1
+        base_sf = level
     sf = base_sf * window
 
     if amplitude == 'white':
@@ -1684,7 +1684,7 @@ def stm_classic(fs, frequency, level=1, phase='random', amplitude='white',
 
 def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
         cps=4, cpo=2, duration=1, mod_type='linear', n_sidebands=10,
-        calibration=None, return_type='time'):
+        calibration=None, return_type='time', masker=None):
     '''
     Generates linear or exponential spectro-temporal modulations using an
     inverse FFT approach.
@@ -1724,6 +1724,14 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
         spectrotemporal modulation.
     return_type : {'time', 'csd'}
         If 'time', returns the time-domain waveform. If 'csd'
+    masker : {None, dict}
+        Add unmodulated masker to the stimulus. Keys must include `fc` (center
+        frequency), `octaves`, `relative_level`, and `type`. If None, no masker
+        is added. The masker type can either be `"flanking"` (i.e., masker
+        noise is only added to either side of the STM), or `"full"` (i.e.,
+        masker noise is added across the full frequency range specified by `fc`
+        and `octaves`). `relative_level` is specified relative to the spectrum
+        level of the STM.
 
     Note
     ----
@@ -1740,7 +1748,7 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
     if int(df) != df:
         raise ValueError('Duration must be an integer multiple of sampling rate')
 
-    frequency, amplitude, phase, _ = _preprocess_stm(
+    f, a, p, base_sf = _preprocess_stm(
         frequency, phase, amplitude, level, calibration
     )
 
@@ -1749,35 +1757,35 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
 
     # This defines the phase shift with increasing frequency (i.e., the
     # spectralPhase parameter in the SuppPub1.m file)
-    phi = 2 * np.pi * cpo * np.log2(frequency / frequency.min())
+    phi = 2 * np.pi * cpo * np.log2(f / f.min())
 
     if mod_type in ('linear', 'lin'):
-        fi = (frequency / df).astype('i')
-        fu = ((frequency + cps) / df).astype('i')
-        fl = ((frequency - cps) / df).astype('i')
-        csd[fi] += amplitude * np.exp(1j * phase)
-        csd[fu] += 0.5 * depth * amplitude * np.exp(1j * (phase + phi))
-        csd[fl] += 0.5 * depth * amplitude * np.exp(1j * (phase - phi))
+        fi = (f / df).astype('i')
+        fu = ((f + cps) / df).astype('i')
+        fl = ((f - cps) / df).astype('i')
+        csd[fi] += a * np.exp(1j * p)
+        csd[fu] += 0.5 * depth * a * np.exp(1j * (p + phi))
+        csd[fl] += 0.5 * depth * a * np.exp(1j * (p - phi))
     elif mod_type in ('exponential', 'exp'):
         M_prime = (depth / 20) * np.log(10)
         # Even bands (including center frequency since when k=0, everything
         # collapses to the definition for the base in table II)
         k = np.arange(-n_sidebands, n_sidebands+1, 2)[:, np.newaxis]
-        ki = ((frequency + k * cps) / df).astype('i')
+        ki = ((f + k * cps) / df).astype('i')
         sf = ((-1)**(k/2)) * iv(np.abs(k), M_prime)
         p_sum = np.sum(sf ** 2)
 
-        c = sf * amplitude * np.exp(1j * (phase + k * phi + np.pi/2))
+        c = sf * a * np.exp(1j * (p + k * phi + np.pi/2))
         # Use add.at since ki can have duplicate indices when modulation
         # sidebands overlap for some carriers).
         np.add.at(csd, ki, c)
 
         # Odd bands
         k = np.arange(-(n_sidebands-1), n_sidebands, 2)[:, np.newaxis]
-        ki = ((frequency + k * cps) / df).astype('i')
+        ki = ((f + k * cps) / df).astype('i')
         sf = ((-1)**((k-1)/2)) * iv(np.abs(k), M_prime)
         p_sum += np.sum(sf ** 2)
-        c = sf * amplitude * np.exp(1j * (phase - np.pi/2 + k * phi + np.pi/2))
+        c = sf * a * np.exp(1j * (p - np.pi/2 + k * phi + np.pi/2))
         np.add.at(csd, ki, c)
 
         # The square root of the sum of squares of the Bessel component gives
@@ -1785,6 +1793,22 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
         # that it always returns the same RMS power regardless of modulation
         # depth.
         csd /= np.sqrt(p_sum)
+
+    if masker is not None:
+        valid_keys = ['fc', 'octaves', 'rolloff_octaves', 'rolloff']
+        frequency = {k: v for k, v in masker.items() if k in valid_keys}
+        gain = util.dbi(masker.get('gain', 0))
+        print(gain)
+        f, a, p, _ = _preprocess_stm(frequency, phase, amplitude, base_sf * gain)
+        eps = np.abs(csd).max() * util.dbi(-60)
+
+        masker_type = masker.get('type', 'flanking')
+        if masker_type == 'flanking':
+            m = np.abs(csd[f]) > eps
+            a[m] = 0
+            csd[f] += a * np.exp(1j * p)
+        elif masker_type == 'full':
+            csd[f] += a * np.exp(1j * p)
 
     if return_type == 'time':
         return util.csd_to_signal(csd)
