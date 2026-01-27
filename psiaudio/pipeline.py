@@ -103,6 +103,9 @@ class PipelineData(np.ndarray):
         obj = np.asarray(arr).view(cls)
         obj.fs = fs
         obj.s0 = s0
+        obj.t0 = s0 / fs
+        obj.s_end = s0 + arr.shape[-1]
+        obj.t_end = obj.s_end / fs
 
         if obj.ndim <= 2:
             if metadata is None:
@@ -199,6 +202,9 @@ class PipelineData(np.ndarray):
         if obj is None: return
         self.fs = getattr(obj, 'fs', None)
         self.s0 = getattr(obj, 's0', None)
+        self.t0 = getattr(obj, 't0', None)
+        self.t_end = getattr(obj, 't_end', None)
+
         self.metadata = copy(getattr(obj, 'metadata', {}))
         self.channel = copy(getattr(obj, 'channel', None))
         if self.channel is None and self.ndim > 1:
@@ -346,7 +352,7 @@ class Events:
         start : int
             Starting sample of the detection range (inclusive)
         end : int
-            Ending sample of the detection rnage (exclusive)
+            Ending sample of the detection range (exclusive)
         fs : float
             Sampling rate of data. Optional. If not provided, `get_range` and
             `get_latest` will not work.
@@ -356,6 +362,8 @@ class Events:
         self.start = start
         self.end = end
         self.fs = fs
+        self.t_start = start / fs
+        self.t_end = end / fs
 
     def __str__(self):
         return f'Events (n={len(self.events)} between {self.start} and {self.end}, fs={self.fs})'
@@ -1000,9 +1008,7 @@ def capture(fs, queue, target):
                 t_start = info['t0']
                 s_next = round(t_start * fs)
                 target(Ellipsis)
-                log.error('Starting capture at %f', t_start)
             elif info is None:
-                log.debug('Ending capture')
                 s_next = None
             else:
                 raise ValueError('Unsupported queue input %r', info)
