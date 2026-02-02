@@ -223,7 +223,10 @@ class FlatCalibration(BaseCalibration):
         Returns level in calibrated units (e.g., Pascals if reference is SPL).
         '''
         sensitivity = self.get_sens(1e3)
-        return voltage * util.dbi(sensitivity)
+        if self.reference == 'SPL':
+            return voltage * util.dbtopa(sensitivity)
+        else:
+            raise ValueError('Unrecognized reference level')
 
     def get_sens(self, frequency):
         sens = self.sensitivity-self.fixed_gain
