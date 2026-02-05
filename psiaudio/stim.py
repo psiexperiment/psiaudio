@@ -502,6 +502,21 @@ class SquareWaveEnvelopeFactory(Modulator):
 
 
 ################################################################################
+# Square wave factory
+################################################################################
+class SquareWaveFactory(Carrier):
+
+    def __init__(self, fs, depth, fm, duty_cycle, calibration, input_factory,
+                 alpha=0):
+        vars(self).update(locals())
+        self.reset()
+
+    def next(self, samples):
+        return square_wave(self.fs, self.offset, samples, self.depth, self.fm,
+                           self.duty_cycle, self.alpha)
+
+
+################################################################################
 # Broadband noise
 ################################################################################
 class BroadbandNoiseFactory(Carrier):
