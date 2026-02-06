@@ -89,6 +89,10 @@ class PipelineData(np.ndarray):
         return self.shape[-1]
 
     @property
+    def duration(self):
+        return self.n_time / self.fs
+
+    @property
     def n_channels(self):
         return 1 if self.ndim == 1 else self.shape[-2]
 
