@@ -751,8 +751,9 @@ def extract_epochs(fs, queue, epoch_size, target, buffer_size=0,
     buffer_samples = round(buffer_size * fs)
 
     # Since we may capture very short, rapidly occurring epochs (at, say,
-    # 80 per second), I find it best to accumulate as many epochs as possible before
-    # calling the next target. This list will maintain the accumulated set.
+    # 80 per second), I find it best to accumulate as many epochs as possible
+    # before calling the next target. This list will maintain the accumulated
+    # set.
     epochs = []
 
     # Create dummy event and auto-set it to generate old behavior (where we
