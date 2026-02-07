@@ -1145,6 +1145,35 @@ def average(n, target):
 
 
 @coroutine
+def auto_scale(scale, baseline, target):
+    data = (yield)
+    # Now that we have our first chunk of data, calculate some basics.
+    fs = data.fs
+    baseline_samples = int(np.round(baseline * fs))
+
+    # Accumulate data until we have spooled enough to do our baseline estimate.
+    # All pipeline steps downstream from this one will appear to be
+    # unresponsive until this step completes.
+    while data.shape[-1] < baseline_samples:
+        data = concat((data, (yield)), axis=-1)
+
+    # Now, discard the pre-baseline samples.
+    baseline_max = data[..., :baseline_samples].view(np.ndarray).max()
+    sf = scale / baseline_max
+    log.info('Autoscaling %f to %f using %f', baseline_max, scale, sf)
+
+    # Immediately send the data accumulated for the baseline (plus any extra
+    # data that was captured), then wait for the next chunk of data.
+    while True:
+        data = data * sf
+        if isinstance(data, PipelineData):
+            data.metadata['baseline_max'] = baseline_max
+            data.metadata['sf'] = sf
+        target(data)
+        data = (yield)
+
+
+@coroutine
 def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None,
             current_th_cb=None):
     '''
@@ -1240,6 +1269,38 @@ def derivative(initial_state, target):
         target(np.diff(samples) * samples.fs)
         initial_state = samples[..., -1:]
         new_samples = (yield)
+
+
+@coroutine
+def extract_power(frequency, window, target):
+    '''
+    Extract power using quadrature demodulation
+
+    Parameters
+    ----------
+    frequency : float
+        Frequency to extract.
+    window : str
+        Name of Scipy signal window to apply
+    '''
+    kernel = None
+    n = None
+
+    while True:
+        d = (yield)
+        if kernel is None:
+            kernel = 2 * np.exp(-1j * 2 * np.pi * d.t * frequency)
+            n = d.n_time
+            w = signal.get_window(window, n)
+            kernel = kernel * (w / w.mean()) / n
+        p = np.abs(np.dot(d, kernel))[np.newaxis]
+        result = PipelineData(
+            p,
+            s0=d.s0 / n,
+            fs=d.fs / n,
+            metadata=d.metadata, channel=d.channel,
+        )
+        target(result)
 
 
 ################################################################################
