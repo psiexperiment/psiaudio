@@ -225,8 +225,10 @@ class FlatCalibration(BaseCalibration):
         sensitivity = self.get_sens(1e3)
         if self.reference == 'SPL':
             return voltage * util.dbtopa(sensitivity)
+        elif self.reference is None:
+            return voltage * util.dbi(sensitivity)
         else:
-            raise ValueError('Unrecognized reference level')
+            raise ValueError(f'Unrecognized reference: {self.reference}')
 
     def get_sens(self, frequency):
         sens = self.sensitivity-self.fixed_gain
@@ -351,7 +353,7 @@ class InterpCalibration(BaseFrequencyCalibration):
         Parameters
         ----------
         target_level : {None, float}
-            If None, FIR filter is configured so that 
+            If None, FIR filter is configured so that
 
         Returns
         -------
