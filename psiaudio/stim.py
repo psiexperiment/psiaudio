@@ -1640,6 +1640,8 @@ def _preprocess_stm(frequency, phase='random', amplitude=None, level=1,
                 window[f < flb] = (f[f < flb] / flb) ** rolloff
             else:
                 window = np.ones_like(f)
+        else:
+            raise ValueError('Unsupported configuration for frequency')
     else:
         f = np.asarray(frequency)
         window = np.ones_like(f)
@@ -1781,6 +1783,16 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
         csd[fi] += a * np.exp(1j * p)
         csd[fu] += 0.5 * depth * a * np.exp(1j * (p + phi))
         csd[fl] += 0.5 * depth * a * np.exp(1j * (p - phi))
+
+        sf = np.array([a, 0.5 * depth * a, 0.5 * depth * a])
+        p_sum = np.sum(sf ** 2)
+
+        # The square root of the sum of squares of the individual components
+        # gives us the scaling factor that we need to use to normalize the
+        # signal so that it always returns the same RMS power regardless of
+        # modulation depth.
+        csd /= np.sqrt(p_sum)
+
     elif mod_type in ('exponential', 'exp'):
         M_prime = (depth / 20) * np.log(10)
         # Even bands (including center frequency since when k=0, everything
@@ -1813,7 +1825,6 @@ def stm(fs, frequency, level=1, phase='random', amplitude='white', depth=1,
         valid_keys = ['fc', 'octaves', 'rolloff_octaves', 'rolloff']
         frequency = {k: v for k, v in masker.items() if k in valid_keys}
         gain = util.dbi(masker.get('gain', 0))
-        print(gain)
         f, a, p, _ = _preprocess_stm(frequency, phase, amplitude, base_sf * gain)
         eps = np.abs(csd).max() * util.dbi(-60)
 
