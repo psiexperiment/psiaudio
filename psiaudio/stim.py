@@ -239,7 +239,7 @@ def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
         Duration of envelope (from rise onset to rise offset)
     rise_time : {None, float}
         Rise time of envelope. If None, then there is no plateau/steady-state
-        portion of the envelope.
+        portion of the envelope. See notes for special-case handling.
     offset : int
         Offset to begin generating waveform at (in samples relative to start)
     start_time : float
@@ -249,6 +249,12 @@ def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
     transform : callable
         Callable that can transform the resulting envelope into the desired
         units.
+
+
+    Notes
+    -----
+    For gaussian envelopes, the standard deviation is set to 1/8 of the total
+    width (onset to offset) of the envelope.
     '''
     i_env_lb = int(round(start_time * fs))
     i_duration = int(round(duration * fs))
@@ -269,6 +275,8 @@ def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
 
     if window == 'cosine-squared':
         ramp = cos2ramp(2 * i_rise_time)
+    elif window == 'gaussian':
+        ramp = signal.windows.gaussian(2 * i_rise_time, i_rise_time / 4)
     else:
         ramp = getattr(signal.windows, window)(2 * i_rise_time)
 
