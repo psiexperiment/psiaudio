@@ -134,6 +134,18 @@ class BaseCalibration:
     def get_sens(self, frequency):
         raise NotImplementedError
 
+    def get_level(self, voltage, frequency=1e3):
+        '''
+        Returns level in calibrated units (e.g., Pascals if reference is SPL).
+        '''
+        sensitivity = self.get_sens(frequency)
+        if self.reference == 'SPL':
+            return voltage * util.dbtopa(sensitivity)
+        elif self.reference is None:
+            return voltage * util.dbi(sensitivity)
+        else:
+            raise ValueError(f'Unrecognized reference: {self.reference}')
+
 
 class FlatCalibration(BaseCalibration):
 
@@ -217,18 +229,6 @@ class FlatCalibration(BaseCalibration):
         super().__init__(reference, attrs)
         self.sensitivity = sensitivity
         self.fixed_gain = fixed_gain
-
-    def get_level(self, voltage):
-        '''
-        Returns level in calibrated units (e.g., Pascals if reference is SPL).
-        '''
-        sensitivity = self.get_sens(1e3)
-        if self.reference == 'SPL':
-            return voltage * util.dbtopa(sensitivity)
-        elif self.reference is None:
-            return voltage * util.dbi(sensitivity)
-        else:
-            raise ValueError(f'Unrecognized reference: {self.reference}')
 
     def get_sens(self, frequency):
         sens = self.sensitivity-self.fixed_gain
