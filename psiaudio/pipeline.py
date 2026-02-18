@@ -1174,6 +1174,20 @@ def auto_scale(scale, baseline, target):
 
 
 @coroutine
+def continuous_auto_scale(scale, target):
+    baseline_max = 0
+    while True:
+        data = (yield)
+        baseline_max = max(baseline_max, data.view(np.ndarray).max())
+        sf = scale / baseline_max
+        if isinstance(data, PipelineData):
+            #data.metadata['baseline_max'] = baseline_max
+            #data.metadata['sf'] = sf
+            pass
+        target(data * sf)
+
+
+@coroutine
 def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None,
             current_th_cb=None):
     '''
