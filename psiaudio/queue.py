@@ -143,7 +143,7 @@ class AbstractSignalQueue:
         new_sample = int(round((t - self._t0) * self._fs))
         if check and (new_sample > self._samples):
             raise ValueError(f'Cannot rewind past last sample generated. ' \
-                             'Requested {t:.3f}s, last sample was {self.get_ts():.3f}s.')
+                             f'Requested {t:.3f}s, last sample was {self.get_ts():.3f}s.')
         self._samples = new_sample
 
     def pause(self, t=None):
