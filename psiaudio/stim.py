@@ -706,13 +706,23 @@ class BandlimitedNoiseFactory(Carrier):
         return waveform * self.polarity
 
 
-def bandlimited_noise(fs, level, fl, fh, duration, filter_rolloff=1,
+def bandlimited_noise(fs, level, fl, fh, duration=None, filter_rolloff=1,
                       passband_attenuation=1, stopband_attenuation=80,
-                      equalize=False, polarity=1, seed=1, calibration=None):
+                      equalize=False, polarity=1, seed=1, samples='auto',
+                      calibration=None):
+
     args = locals()
     args.pop('duration')
+    args.pop('samples')
+
+    if samples == 'auto':
+        if duration is None:
+            raise ValueError('Must provide either duration or samples')
+        samples = int(round(duration * fs))
+    elif duration is not None:
+        raise ValueError('Cannot specify duration if samples is provided')
+
     factory = BandlimitedNoiseFactory(**args)
-    samples = int(round(duration * fs))
     return factory.next(samples)
 
 
@@ -1933,3 +1943,79 @@ def apply_cos2envelope(waveform, fs, rise_time, duration=None, start_time=0):
     env = cos2envelope(fs=fs, duration=duration, rise_time=rise_time, offset=0,
                        start_time=start_time, samples=len(waveform))
     return env * waveform
+
+
+def gap(fs, fc, octaves, gap, duration_a, duration_b, rise_time, level,
+        calibration):
+    """
+    Generate an acoustic gap stimulus consisting of two markers separated by silence.
+
+    The stimulus applies an amplitude envelope with Gaussian onset and offset ramps
+    to a carrier signal. If `octaves` is greater than 0, the carrier is bandlimited 
+    noise centered at `fc`. If `octaves` is 0, the carrier is a pure tone at `fc`.
+
+    Parameters
+    ----------
+    fs : int or float
+        The sampling frequency of the signal in Hz.
+    fc : int or float
+        The center frequency of the bandlimited noise, or the exact frequency of 
+        the pure tone if `octaves` is 0, in Hz.
+    octaves : float
+        The bandwidth of the noise carrier in octaves. If set to 0, the function 
+        generates a pure tone instead of noise.
+    gap : float
+        The duration of the silent gap separating the two markers, in seconds.
+    duration_a : float
+        The duration of the leading acoustic marker (pre-gap), in seconds.
+    duration_b : float
+        The duration of the trailing acoustic marker (post-gap), in seconds.
+    rise_time : float
+        The rise and fall time for the Gaussian envelope windows, in seconds.
+    level : float
+        The target sound pressure level (SPL) of the carrier signal in dB.
+    calibration : float or object
+        The calibration factor or object required by the carrier generation 
+        functions to correctly scale the output amplitude based on the `level`.
+
+    Returns
+    -------
+    ndarray
+        A 1D numpy array containing the generated audio waveform of the gap stimulus.
+    """
+    env_a = envelope(
+        fs=fs,
+        window='gaussian',
+        rise_time=rise_time,
+        duration=duration_a,
+    )
+    env_b = envelope(
+        fs=fs,
+        window='gaussian',
+        rise_time=rise_time,
+        duration=duration_b,
+    )
+    gap = np.zeros(int(round(gap * fs)))
+    env = np.concatenate([env_a, gap, env_b])
+    
+    if octaves != 0:
+        fl = fc / (2 ** (octaves / 2))
+        fh = fc * (2 ** (octaves / 2))
+        carrier = bandlimited_noise(
+            fs=fs,
+            level=level,
+            fl=fl,
+            fh=fh,
+            samples=len(env),
+            calibration=calibration,
+        )
+    else:
+        carrier = tone(
+            fs=fs,
+            level=level,
+            frequency=fc,
+            samples=len(env),
+            calibration=calibration,
+        )
+
+    return env * carrier

@@ -20,7 +20,7 @@ import sys
 # -- Project information -----------------------------------------------------
 
 project = 'psiaudio'
-copyright = '2022'
+copyright = '2026'
 author = 'psiexperiment development team'
 
 
