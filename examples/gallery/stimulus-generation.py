@@ -138,8 +138,7 @@ noise.get_duration()
 from psiaudio.stim import SAMEnvelopeFactory
 
 sam_envelope = SAMEnvelopeFactory(fs=fs, depth=1, fm=5,
-                                  delay=1, direction=1,
-                                  calibration=calibration,
+                                  delay=1, direction='positive',
                                   input_factory=noise)
 waveform = sam_envelope.next(fs*2)
 plt.plot(waveform)

@@ -87,8 +87,8 @@ print(f'An 0.1 Vrms 1 kHz microphone waveform is {spl:.2f} dB SPL')
 # The calibration classes make it very easy to get the signal spectrum in dB
 # SPL. Let's assume that the microphone does not have a flat frequency
 # response.  Assume that SPL is measured using a 1 Vrms tone
-frequency =     np.array([500, 1000, 2000, 4000, 8000, 16000])
-measured_vrms = np.array([  3,   1,   0.3,  0.3,    1,     3])
+frequency =     np.array([0,   500, 1000, 2000, 4000, 8000, 16000, 50000])
+measured_vrms = np.array([3,   3,   1,    0.3,  0.3,  1,    3,     3])
 
 calibration = InterpCalibration.from_spl(frequency, spl=90, vrms=measured_vrms)
 

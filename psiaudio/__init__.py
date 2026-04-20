@@ -4,6 +4,16 @@ from .version import __version__
 
 
 def add_logging_level(name, level):
+    """
+    Add a custom logging level to the logging module.
+
+    Parameters
+    ----------
+    name : str
+        Name of the logging level.
+    level : int
+        Integer value for the logging level.
+    """
     logging.addLevelName(level, name)
     # This step is required for coloredlogs to properly map the level name
     setattr(logging, name, level)

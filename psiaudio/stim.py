@@ -33,6 +33,21 @@ def fast_cache(f):
 # Utilities
 ################################################################################
 def apply_max_correction(sf, max_correction):
+    """
+    Apply a maximum correction limit to the requested calibration scale factor.
+
+    Parameters
+    ----------
+    sf : array_like
+        Scale factors to correct.
+    max_correction : float
+        Maximum allowed correction in dB relative to the mean correction.
+
+    Returns
+    -------
+    array_like
+        Clipped scaling factors.
+    """
     db = util.db(sf)
     db_mean = np.mean(db)
     db_min = db_mean - max_correction
@@ -41,6 +56,23 @@ def apply_max_correction(sf, max_correction):
 
 
 def apply_weighting(freq, sf, weighting_type):
+    """
+    Apply acoustic weighting to scaling factors.
+
+    Parameters
+    ----------
+    freq : array_like
+        Frequencies corresponding to scaling factors.
+    sf : array_like
+        Scaling factors.
+    weighting_type : str
+        Type of weighting, e.g., 'A', 'C', etc.
+
+    Returns
+    -------
+    array_like
+        Weighted scaling factors.
+    """
     weights = weighting.load(freq, weighting_type)
     return sf * util.dbi(weights)
 
@@ -49,33 +81,72 @@ def apply_weighting(freq, sf, weighting_type):
 # Base classes
 ################################################################################
 class Waveform:
+    """
+    Base class for waveform generation.
+    """
 
     def reset(self):
+        """Reset the generator to its initial state."""
         raise NotImplementedError
 
     def next(self, samples):
+        """
+        Generate the next segment of the waveform.
+
+        Parameters
+        ----------
+        samples : int
+            Number of samples to generate.
+
+        Returns
+        -------
+        ndarray
+            Generated samples.
+        """
         raise NotImplementedError
 
     def n_samples_remaining(self):
+        """
+        Get the number of samples remaining.
+
+        Returns
+        -------
+        float or int
+            Number of samples remaining, or np.inf if continuous.
+        """
         raise NotImplementedError
 
     def n_samples(self):
+        """
+        Get total number of samples the waveform will generate.
+
+        Returns
+        -------
+        float or int
+            Total samples, or np.inf if continuous.
+        """
         raise NotImplementedError
 
     def get_samples_remaining(self):
+        """Get all remaining samples."""
         samples = self.n_samples_remaining()
         if samples == np.inf:
             raise ValueError('Waveform does not have a finite duration')
         return self.next(samples)
 
     def get_duration(self):
+        """Get total duration of the waveform in seconds."""
         raise NotImplementedException
 
     def is_complete(self):
+        """Check if generation is complete."""
         raise NotImplementedException
 
 
 class ContinuousWaveform(Waveform):
+    """
+    Waveform of infinite duration.
+    """
 
     def n_samples_remaining(self):
         return np.inf
@@ -91,6 +162,16 @@ class ContinuousWaveform(Waveform):
 
 
 class FixedWaveform(Waveform):
+    """
+    Pre-generated waveform returned in segments.
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate.
+    waveform : ndarray
+        The full pre-generated waveform.
+    """
 
     def __init__(self, fs, waveform):
         self.fs = fs
@@ -419,7 +500,7 @@ class SAMEnvelopeFactory(Modulator):
             # noise. The overall level and starting phase will be adjusted such
             # that we get a smooth transition from a "flat" envelope to a
             # modulated envelope with no level cue.
-            self.eq_phase = sam_eq_phase(delay, depth, direction)
+            self.eq_phase = sam_eq_phase(depth, direction)
             self.eq_power = sam_eq_power(depth)
         elif onset_method == 'silence_transition':
             # This assumes that the transition is from silence. Since the

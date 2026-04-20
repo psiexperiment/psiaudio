@@ -78,7 +78,7 @@ def plot_queue(queue, n_samples):
 #
 #     A A A B B B C C C D D D E E E F F F
 
-queue = FIFOSignalQueue(fs)
+queue = FIFOSignalQueue(fs=fs)
 queue.extend(wavfiles, trials=3)
 plot_queue(queue, n_samples)
 
@@ -88,7 +88,7 @@ plot_queue(queue, n_samples)
 # advancing to the next trial.
 #
 #     A B C D E F A B C D E F A B C D E F
-queue = BlockedFIFOSignalQueue(fs)
+queue = BlockedFIFOSignalQueue(fs=fs)
 queue.extend(wavfiles, 3)
 plot_queue(queue, n_samples)
 
@@ -108,7 +108,7 @@ plot_queue(queue, n_samples)
 ###############################################################################
 # We can also randomize stimuli within each block using
 # ``BlockedRandomSignalQueue``.
-queue = BlockedRandomSignalQueue(fs)
+queue = BlockedRandomSignalQueue(fs=fs)
 queue.extend(wavfiles, 3)
 plot_queue(queue, n_samples)
 

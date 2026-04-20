@@ -15,7 +15,7 @@ from psiaudio import util
 figure, axes = plt.subplots(1, 2, figsize=(8, 4))
 
 flat_cal = calibration.FlatCalibration.from_spl(80)
-fs = 100e3
+fs = 96e3
 window = 2.5e-3
 
 for flb, fub in [(4e3, 32e3), (8e3, 16e3)]:
@@ -62,7 +62,8 @@ for flb, fub in [(2e3, 8e3), (4e3, 32e3), (8e3, 16e3), (16e3, 32e3)]:
         )
 
         psd = util.psd_df(waveform, fs)
-        spl = st_cal.get_db(psd)
+        # DC frequency is not calibrated, so we exclude it.
+        spl = st_cal.get_db(psd.iloc[1:])
 
         rms_spl = st_cal.get_db(1e3, util.rms(waveform))
         psd_spl = util.rms_rfft_db(spl)

@@ -39,14 +39,30 @@ factory = SquareWaveEnvelopeFactory(
 
 n_samples = round(duration * 0.025 * fs)
 
+
+figure, axes = plt.subplots(3, 1, figsize=(6, 6), constrained_layout=True,
+                            sharex=True, sharey=True)
+
+to_merge = []
 for i in range(100):
     s = factory.next(n_samples)
-    t = (n_samples * i + np.arange(n_samples)) * fs
-    plt.plot(t, s, '.-')
+    t = (n_samples * i + np.arange(n_samples)) / fs
+    axes[0].plot(t, s, '-')
+    to_merge.append(s)
+s_merged = np.concatenate(to_merge, axis=-1)
 
 factory.reset()
 s = factory.next(n_samples * 100)
-t = np.arange(n_samples * 100) * fs
-plt.plot(t, s, 'k-', zorder=-1)
+t = np.arange(n_samples * 100) / fs
+axes[1].plot(t, s, 'k-', zorder=-1)
+
+axes[2].plot(t, s - s_merged, 'k-')
+axes[0].set_title('RAM EFR incrementially generated')
+axes[1].set_title('RAM EFR generated as a full section')
+axes[2].set_title('Difference between incremential and full generation')
+
+for ax in axes:
+    ax.set_ylabel('Signal (V)')
+axes[2].set_xlabel('Time (s)')
 
 plt.show()

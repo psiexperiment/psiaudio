@@ -10,14 +10,22 @@ from scipy import signal
 
 
 def get_cb(cb, suffix=None):
-    '''
-    Create a function that can be called iteratively to indicate progress. Must
-    call with a number that indicates fraction to completion.
+    """
+    Create a callback function to indicate progress.
 
+    Parameters
+    ----------
     cb : {'tqdm', None}
         If 'tqdm', creates a text-based progressbar. If None, no progress is
         reported.
-    '''
+    suffix : str, optional
+        Suffix to append to the progress bar message.
+
+    Returns
+    -------
+    callable
+        Function that can be called iteratively with a fractional completion value.
+    """
     # Define the callback as a no-op if not provided or sets up tqdm if requested.
     if cb is None:
         cb = lambda x: x
@@ -39,12 +47,40 @@ def get_cb(cb, suffix=None):
 
 
 def as_numeric(x):
+    """
+    Ensure input is a numeric numpy array or pandas block.
+
+    Parameters
+    ----------
+    x : array_like
+        Input data.
+
+    Returns
+    -------
+    array_like
+        Numeric array data.
+    """
     if not isinstance(x, (np.ndarray, pd.DataFrame, pd.Series)):
         x = np.asanyarray(x)
     return x
 
 
 def db(target, reference=1):
+    """
+    Convert target amplitude to decibels relative to a reference.
+
+    Parameters
+    ----------
+    target : array_like
+        Target amplitude.
+    reference : float or array_like, optional
+        Reference amplitude, by default 1.
+
+    Returns
+    -------
+    array_like
+        Decibels (dB) computed as 20 * log10(target / reference).
+    """
     target = as_numeric(target)
     reference = as_numeric(reference)
     with np.errstate(divide='ignore'):
@@ -52,6 +88,21 @@ def db(target, reference=1):
 
 
 def dbi(db, reference=1):
+    """
+    Inverse decibel conversion.
+
+    Parameters
+    ----------
+    db : array_like
+        Array of decibel values.
+    reference : float or array_like, optional
+        Reference amplitude, by default 1.
+
+    Returns
+    -------
+    array_like
+        Linear amplitude.
+    """
     db = as_numeric(db)
     return (10**(db/20))*reference
 
@@ -101,19 +152,45 @@ def patodb(pa):
 
 
 def normalize_rms(waveform, out=None):
-    '''
-    Normalize RMS power to 1 (typically used when generating a noise waveform
-    that will be scaled by a calibration factor)
+    """
+    Normalize RMS power to 1.
 
+    Typically used when generating a noise waveform that will be scaled by a
+    calibration factor.
+
+    Parameters
+    ----------
     waveform : array_like
         Input array.
-    out : array_like
-        An array to store the output.  Must be the same shape as `waveform`.
-    '''
+    out : array_like, optional
+        An array to store the output. Must be the same shape as `waveform`.
+
+    Returns
+    -------
+    array_like
+        RMS normalized waveform.
+    """
     return np.divide(waveform, rms(waveform), out)
 
 
 def csd(s, window=None, detrend='linear'):
+    """
+    Compute cross-spectral density using rfft.
+
+    Parameters
+    ----------
+    s : array_like
+        Input signal.
+    window : str or None, optional
+        Window to apply to the signal, by default None.
+    detrend : str or None, optional
+        Detrending type, by default 'linear'.
+
+    Returns
+    -------
+    ndarray
+        Cross-spectral density.
+    """
     if detrend is not None:
         s = signal.detrend(s, type=detrend, axis=-1)
     n = s.shape[-1]
@@ -125,6 +202,19 @@ def csd(s, window=None, detrend='linear'):
 
 
 def csd_to_signal(csd):
+    """
+    Convert cross-spectral density back to signal.
+
+    Parameters
+    ----------
+    csd : ndarray
+        Cross-spectral density.
+
+    Returns
+    -------
+    ndarray
+        Time-domain signal.
+    """
     n = 2 * (len(csd) - 1)
     scale = 2 / n / np.sqrt(2)
     return np.fft.irfft(csd / scale, axis=-1)
@@ -142,6 +232,27 @@ def _phase(csd, unwrap=True):
 
 
 def phase(s, fs, window=None, waveform_averages=None, unwrap=True):
+    """
+    Extract phase from a signal.
+
+    Parameters
+    ----------
+    s : array_like
+        Input signal.
+    fs : float
+        Sampling rate.
+    window : str, optional
+        Window name, by default None.
+    waveform_averages : int, optional
+        Number of averages, by default None.
+    unwrap : bool, optional
+        Whether to unwrap phase angle, by default True.
+
+    Returns
+    -------
+    ndarray
+        Phase of the signal in radians.
+    """
     c = csd(s, window, waveform_averages)
     return _phase(c, unwrap)
 

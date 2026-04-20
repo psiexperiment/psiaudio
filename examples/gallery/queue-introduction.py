@@ -65,7 +65,7 @@ plt.show()
 
 ###############################################################################
 # Want to interleave the stimuli? Use `InterleavedFIFOSignalQueue`.
-queue = InterleavedFIFOSignalQueue(fs)
+queue = InterleavedFIFOSignalQueue(fs=fs)
 queue.append(chirp, trials=5, delays=1)
 queue.append(noise_burst, trials=5, delays=1)
 queue.append(tone_burst, trials=5, delays=1)
@@ -83,7 +83,7 @@ plt.show()
 
 # Set the random seed to 1 since this creates an ordering that is clearly
 # semi-randomized.
-queue = BlockedRandomSignalQueue(fs, seed=1)
+queue = BlockedRandomSignalQueue(fs=fs, seed=1)
 queue.append(chirp, trials=5, delays=1)
 queue.append(noise_burst, trials=5, delays=1)
 queue.append(tone_burst, trials=5, delays=1)

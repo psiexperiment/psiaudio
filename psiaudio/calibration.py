@@ -31,6 +31,14 @@ nf_err_mesg = 'Power at {:.1f}Hz has SNR of {:.2f}dB'
 
 
 class CalibrationError(Exception):
+    """
+    Base exception for calibration errors.
+
+    Parameters
+    ----------
+    message : str
+        Description of the calibration error.
+    """
 
     def __init__(self, message):
         self.message = message
@@ -40,6 +48,16 @@ class CalibrationError(Exception):
 
 
 class CalibrationTHDError(CalibrationError):
+    """
+    Exception raised when total harmonic distortion (THD) exceeds limits.
+
+    Parameters
+    ----------
+    frequency : float
+        Frequency at which THD error occurred.
+    thd : float
+        The THD value measured (in %).
+    """
 
     def __init__(self, frequency, thd):
         self.frequency = frequency
@@ -49,6 +67,16 @@ class CalibrationTHDError(CalibrationError):
 
 
 class CalibrationNFError(CalibrationError):
+    """
+    Exception raised when noise floor/SNR limits are violated.
+
+    Parameters
+    ----------
+    frequency : float
+        Frequency at which error occurred.
+    snr : float
+        Measured SNR value in dB.
+    """
 
     def __init__(self, frequency, snr):
         self.frequency = frequency
@@ -148,6 +176,9 @@ class BaseCalibration:
 
 
 class FlatCalibration(BaseCalibration):
+    """
+    Calibration that assumes a flat sensitivity profile across frequencies.
+    """
 
     @property
     def _get_mv_pa(self):
@@ -241,6 +272,9 @@ class FlatCalibration(BaseCalibration):
 
 
 class BaseFrequencyCalibration(BaseCalibration):
+    """
+    Base class for calibrations that vary over frequencies.
+    """
 
     @classmethod
     def from_pascals(cls, frequency, magnitude, vrms=1, **kwargs):
@@ -407,6 +441,24 @@ class InterpCalibration(BaseFrequencyCalibration):
 
 
 class PointCalibration(BaseFrequencyCalibration):
+    """
+    Calibration class based on discrete measured points.
+
+    Use when interpolation between specified frequencies is not desired.
+
+    Parameters
+    ----------
+    frequency : array_like
+        Calibrated frequencies (in Hz).
+    sensitivity : array_like
+        Sensitivity values at calibrated frequencies.
+    fixed_gain : float, optional
+        Fixed system gain, by default 0.
+    reference : str, optional
+        Unit reference for calibration.
+    attrs : dict, optional
+        Additional metadata/attributes.
+    """
 
     def __init__(self, frequency, sensitivity, fixed_gain=0, reference=None,
                  attrs=None):
