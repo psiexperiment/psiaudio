@@ -22,7 +22,7 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 examples = ["sounddevice"]
-docs = ["sphinx", "sphinx_gallery", "sphinx_rtd_theme", "pygments-enaml", "sounddevice"]
+docs = ["sphinx", "sphinx_gallery", "sphinx_rtd_theme", "pygments-enaml", "sounddevice", "ipython"]
 test = ["pytest", "pytest-benchmark", "pytest-xdist"]
 
 [build-system]
