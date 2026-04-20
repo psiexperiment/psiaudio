@@ -3,6 +3,7 @@ log = logging.getLogger(__name__)
 
 from collections import deque
 from copy import copy
+from functools import wraps
 from threading import Event
 
 import numpy as np
@@ -16,19 +17,27 @@ from . import util
 # PipelineData
 ################################################################################
 def normalize_index(index, ndim):
-    """Expands an index into the same dimensionality as the array
+    """
+    Expands an index into the same dimensionality as the array.
 
     Parameters
     ----------
-    index : {Ellipsis, None, slice, tuple}
-        Index to normalize
+    index : {Ellipsis, None, slice, tuple, int, list, np.ndarray}
+        Index to normalize.
     ndim : int
-        The dimension of the object that is being indexed
+        The dimension of the object that is being indexed.
 
     Returns
     -------
     norm_index : tuple
         The expanded index.
+
+    Raises
+    ------
+    IndexError
+        If 2D indexing is attempted or more than one Ellipsis is provided.
+    ValueError
+        If an unrecognized index type is encountered.
     """
     if index is np.newaxis:
         return tuple([np.newaxis] + [slice(None) for i in range(ndim)])
@@ -79,36 +88,81 @@ def normalize_index(index, ndim):
 
 
 class PipelineData(np.ndarray):
+    """
+    A specialized ndarray subclass for audio and physiological data.
+
+    PipelineData maintains metadata such as sampling rate, starting sample,
+    channel labels, and epoch-specific metadata across common NumPy operations.
+
+    Attributes
+    ----------
+    fs : float
+        Sampling rate in Hz.
+    s0 : int
+        Starting sample number of this segment.
+    t0 : float
+        Starting time in seconds.
+    s_end : int
+        Ending sample number (exclusive).
+    t_end : float
+        Ending time in seconds (exclusive).
+    channel : list or None
+        Channel labels or identifiers.
+    metadata : dict or list of dicts
+        Metadata associated with the data. If 3D (epochs), metadata is a list
+        of dictionaries, one per epoch.
+    """
 
     @property
     def t(self):
+        """Array of timestamps for each sample."""
         return np.arange(self.s0, self.s0 + self.n_time) / self.fs
 
     @property
     def n_time(self):
+        """Number of time samples."""
         return self.shape[-1]
 
     @property
     def duration(self):
+        """Duration of segment in seconds."""
         return self.n_time / self.fs
 
     @property
     def n_channels(self):
+        """Number of channels."""
         return 1 if self.ndim == 1 else self.shape[-2]
 
     @property
     def n_epochs(self):
+        """Number of epochs (None if 1D or 2D)."""
         if self.ndim < 3:
             return None
         else:
             return self.shape[-3]
 
     def __new__(cls, arr, fs, s0=0, channel=None, metadata=None):
+        """
+        Create a new PipelineData object.
+
+        Parameters
+        ----------
+        arr : array_like
+            The data to wrap.
+        fs : float
+            Sampling rate.
+        s0 : int, optional
+            Starting sample index.
+        channel : list, optional
+            List of channel names.
+        metadata : dict or list, optional
+            Metadata associated with the segments.
+        """
         obj = np.asarray(arr).view(cls)
         obj.fs = fs
         obj.s0 = s0
         obj.t0 = s0 / fs
-        obj.s_end = s0 + arr.shape[-1]
+        obj.s_end = s0 + obj.shape[-1]
         obj.t_end = obj.s_end / fs
 
         if obj.ndim <= 2:
@@ -130,6 +184,9 @@ class PipelineData(np.ndarray):
         return obj
 
     def __getitem__(self, s):
+        """
+        Slice the data and update metadata accordingly.
+        """
         obj = super().__getitem__(s)
 
         # This is to address the `astype` which seems to call __getitem__
@@ -203,6 +260,10 @@ class PipelineData(np.ndarray):
         return obj
 
     def __array_finalize__(self, obj):
+        """
+        Set attributes on new PipelineData objects created through NumPy
+        machinery (e.g., views, ufuncs).
+        """
         if obj is None: return
         self.fs = getattr(obj, 'fs', None)
         self.s0 = getattr(obj, 's0', None)
@@ -213,9 +274,17 @@ class PipelineData(np.ndarray):
         self.channel = copy(getattr(obj, 'channel', None))
         if self.channel is None and self.ndim > 1:
             self.channel = [None for i in range(self.shape[-2])]
-        # TODO: Something about metadata?
 
     def mean(self, axis=None, *args, **kwargs):
+        """
+        Calculate mean and update metadata.
+
+        Parameters
+        ----------
+        axis : {None, int, str}
+            Axis along which to compute the mean. Can be 'time', 'channel', or
+            'epoch'.
+        """
         dim, axis = dim_axis(axis)
         if axis == -1:
             n = self.shape[-1]
@@ -241,6 +310,16 @@ class PipelineData(np.ndarray):
         return result
 
     def add_metadata(self, key, value):
+        """
+        Add a key-value pair to metadata.
+
+        Parameters
+        ----------
+        key : str
+            Metadata key.
+        value : object
+            Metadata value.
+        """
         if self.ndim > 2:
             for md in self.metadata:
                 md[key] = value
@@ -249,6 +328,20 @@ class PipelineData(np.ndarray):
 
 
 def ensure_dim(arrays, dim):
+    """
+    Ensure that arrays have the required dimensionality for a given operation.
+
+    Parameters
+    ----------
+    arrays : list of np.ndarray
+        Arrays to check and reshape.
+    dim : {'channel', 'epoch'}
+        Target dimension type.
+
+    Returns
+    -------
+    reshaped_arrays : list of np.ndarray
+    """
     ndim = arrays[0].ndim
     if dim == 'channel' and ndim == 1:
         s = np.s_[np.newaxis, :]
@@ -262,6 +355,21 @@ def ensure_dim(arrays, dim):
 
 
 def dim_axis(axis):
+    """
+    Map semantic axis names to integer indices.
+
+    Parameters
+    ----------
+    axis : {int, str}
+        Axis identifier ('time', 'channel', 'epoch' or -1, -2, -3).
+
+    Returns
+    -------
+    dim : str
+        Semantic name ('time', 'channel', 'epoch').
+    axis : int
+        Integer index.
+    """
     if axis == 'time':
         axis, dim = -1, 'time'
     if axis == 'channel':
@@ -280,6 +388,20 @@ def dim_axis(axis):
 
 
 def concat(arrays, axis=-1):
+    """
+    Concatenate PipelineData objects while preserving metadata.
+
+    Parameters
+    ----------
+    arrays : list of PipelineData
+        List of data segments to concatenate.
+    axis : {int, str}
+        Axis along which to concatenate.
+
+    Returns
+    -------
+    concatenated : PipelineData
+    """
     dim, axis = dim_axis(axis)
 
     is_pipeline_data = [isinstance(a, PipelineData) for a in arrays]
@@ -342,26 +464,45 @@ def concat(arrays, axis=-1):
 # Events
 ################################################################################
 class Events:
-    '''
-    Collection of events occuring over a given span
-    '''
+    """
+    Collection of events occurring over a given time span.
+
+    Maintains a DataFrame of events with timestamps and provides methods for
+    sub-selecting events based on time or sample ranges.
+
+    Attributes
+    ----------
+    events : pd.DataFrame
+        DataFrame with columns 'event', 'sample', and 'ts'.
+    start : int
+        Start sample of the collection range.
+    end : int
+        End sample of the collection range.
+    fs : float
+        Sampling rate.
+    t_start : float
+        Start time in seconds.
+    t_end : float
+        End time in seconds.
+    """
 
     def __init__(self, events, start, end, fs):
-        '''
+        """
         Parameters
         ----------
-        events : list of tuples
-            Each tuple must have two elements. The first is the event name and
-            the second is the sample time of the event.
+        events : list of tuples or pd.DataFrame
+            Each tuple must be (event_name, sample_time).
         start : int
-            Starting sample of the detection range (inclusive)
+            Starting sample of the detection range (inclusive).
         end : int
-            Ending sample of the detection range (exclusive)
+            Ending sample of the detection range (exclusive).
         fs : float
-            Sampling rate of data. Optional. If not provided, `get_range` and
-            `get_latest` will not work.
-        '''
-        self.events = pd.DataFrame(events, columns=['event', 'sample'])
+            Sampling rate of data.
+        """
+        if isinstance(events, pd.DataFrame):
+            self.events = events
+        else:
+            self.events = pd.DataFrame(events, columns=['event', 'sample'])
         self.events['ts'] = self.events['sample'] / fs
         self.start = start
         self.end = end
@@ -376,23 +517,32 @@ class Events:
         return f'<{self}>'
 
     def get_range_samples(self, start, end):
+        """
+        Return a new Events instance for the specified sample range.
+
+        Parameters
+        ----------
+        start : int
+            Starting sample.
+        end : int
+            Ending sample.
+        """
         if (start < self.start) or (end > self.end):
             raise ValueError('Invalid range')
         m = (self.events['sample'] >= start) & (self.events['sample'] < end)
         return Events(self.events[m], start, end, self.fs)
 
     def get_range(self, lb, ub):
-        '''
-        Return a new `Events` instance containing the subset of events occuring
-        within the given range (in seconds).
+        """
+        Return a new Events instance for the specified time range (in seconds).
 
         Parameters
         ----------
         lb : float
-            Starting time of range
+            Lower bound (seconds).
         ub : float
-            Ending time time of range (exclusive)
-        '''
+            Upper bound (seconds).
+        """
         if self.fs is None:
             raise ValueError('Unknown sampling rate. Use `get_range_samples`.')
         start = int(np.round(lb * self.fs))
@@ -400,23 +550,31 @@ class Events:
         return self.get_range_samples(start, end)
 
     def get_latest_samples(self, lb, ub=0):
+        """
+        Return events relative to the end of the collection range.
+
+        Parameters
+        ----------
+        lb : int
+            Offset from end for lower bound.
+        ub : int, optional
+            Offset from end for upper bound.
+        """
         start = lb + self.end
         end = ub + self.end
         return self.get_range_samples(start, end)
 
     def get_latest(self, lb, ub=0):
-        '''
-        Return a new `Events` instance containing the subset of events occuring
-        within the given range (in seconds). Here, `lb` and `ub` are specified
-        relative to the ending time of the block and should be negative.
+        """
+        Return events relative to the end of the collection range (in seconds).
 
         Parameters
         ----------
         lb : float
-            Starting time of range
-        ub : float
-            Ending time time of range (exclusive)
-        '''
+            Offset from end (seconds).
+        ub : float, optional
+            Offset from end (seconds).
+        """
         if self.fs is None:
             raise ValueError('Unknown sampling rate. Use `get_latest_samples`.')
         lb = int(np.round(lb * self.fs))
@@ -425,17 +583,30 @@ class Events:
 
     @property
     def range_samples(self):
+        """Number of samples in the range."""
         return self.end - self.start
 
     @property
     def t0(self):
+        """Starting time of the range."""
         return self.start / self.fs
 
     def rate(self):
+        """Calculate event rate (events per second)."""
+        if self.range_samples == 0:
+            return 0
         return len(self.events) / self.range_samples * self.fs
 
 
 def combine_events(events):
+    """
+    Combine multiple Events collections into one.
+
+    Parameters
+    ----------
+    events : list of Events
+        Collections must be contiguous in time.
+    """
     s0 = events[0].end
     for ed in events[1:]:
         if ed.start != s0:
@@ -456,7 +627,8 @@ def combine_events(events):
 # Generic
 ################################################################################
 def coroutine(func):
-    '''Decorator to auto-start a coroutine.'''
+    """Decorator to auto-start a coroutine."""
+    @wraps(func)
     def start(*args, **kwargs):
         cr = func(*args, **kwargs)
         next(cr)
@@ -466,9 +638,14 @@ def coroutine(func):
 
 @coroutine
 def broadcast(*targets):
-    '''
-    Send the data to multiple targets
-    '''
+    """
+    Send incoming data to multiple targets.
+
+    Parameters
+    ----------
+    *targets : callables
+        Targets to receive data.
+    """
     while True:
         data = (yield)
         for target in targets:
@@ -477,9 +654,16 @@ def broadcast(*targets):
 
 @coroutine
 def transform(function, target):
-    '''
-    Apply function to data and send return value to next target
-    '''
+    """
+    Apply a function to incoming data and send result to target.
+
+    Parameters
+    ----------
+    function : callable
+        Transformation to apply.
+    target : callable
+        Recipient of transformed data.
+    """
     while True:
         data = (yield)
         target(function(data))
@@ -490,6 +674,18 @@ def transform(function, target):
 ################################################################################
 @coroutine
 def rms(fs, duration, target):
+    """
+    Calculate RMS over fixed duration blocks.
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate.
+    duration : float
+        Duration of window for RMS calculation.
+    target : callable
+        Target to receive RMS values.
+    """
     n = int(round(fs * duration))
     data = [(yield)]
     samples = sum(d.shape[-1] for d in data)
@@ -516,9 +712,22 @@ def rms(fs, duration, target):
 
 @coroutine
 def rms_band(fs, fl, fh, duration, target):
-    '''
-    Calculate RMS inside a band
-    '''
+    """
+    Calculate RMS within a specific frequency band.
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate.
+    fl : float
+        Lower frequency bound.
+    fh : float
+        Upper frequency bound.
+    duration : float
+        Duration for calculation.
+    target : callable
+        Recipient of RMS results.
+    """
     n = int(round(fs * duration))
     data = [(yield)]
     samples = sum(d.shape[-1] for d in data)
@@ -558,6 +767,20 @@ def rms_band(fs, fl, fh, duration, target):
 
 @coroutine
 def iirfilter(fs, N, Wn, rp, rs, btype, ftype, target):
+    """
+    Apply an IIR filter to a continuous stream of data.
+
+    Maintains filter state between chunks to avoid transients.
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate.
+    N, Wn, rp, rs, btype, ftype : objects
+        Arguments passed to `scipy.signal.iirfilter`.
+    target : callable
+        Recipient of filtered data.
+    """
     b, a = signal.iirfilter(N, Wn, rp, rs, btype, ftype=ftype, fs=fs)
     if np.any(np.abs(np.roots(a)) > 1):
         raise ValueError('Unstable filter coefficients')
@@ -578,6 +801,16 @@ def iirfilter(fs, N, Wn, rp, rs, btype, ftype, target):
 
 @coroutine
 def blocked(block_size, target):
+    """
+    Emit data in fixed-size blocks.
+
+    Parameters
+    ----------
+    block_size : int
+        Number of samples per block.
+    target : callable
+        Recipient of blocked data.
+    """
     data = []
     n = 0
 
@@ -603,31 +836,24 @@ def blocked(block_size, target):
 @coroutine
 def capture_epoch(epoch_s0, epoch_samples, info, target, fs=None,
                   auto_send=False):
-    '''
-    Coroutine to facilitate capture of a single epoch
-
-    This was written as a supporting function for `extract_epochs` (i.e., it
-    creates one `capture_epoch` for each epoch it is looking for), but can also
-    be used stand-alone to capture single epochs.
+    """
+    Coroutine to facilitate capture of a single epoch.
 
     Parameters
     ----------
-    epoch_s0 : float
+    epoch_s0 : int
         Starting sample of epoch.
     epoch_samples : int
         Number of samples to capture.
     info : dict
-        Dictionary of metadata that will be passed along to downstream
-        coroutines (i.e., the callback).
+        Metadata to be attached to the epoch.
     target : callable
-        Callable that receives a single argument. The argument will be an
-        instance of PipelineData with three dimensions (epoch, channel, time).
-    auto_send : bool
-        If true, automatically send samples as they are acquired.
-    '''
-    # This coroutine will continue until it acquires all the samples it needs.
-    # It then provides the samples to the callback function and exits the while
-    # loop.
+        Recipient of the captured epoch (PipelineData).
+    fs : float, optional
+        Sampling rate.
+    auto_send : bool, optional
+        If True, send samples as they are acquired (partial epochs).
+    """
     accumulated_data = []
     current_s0 = epoch_s0
 
@@ -688,58 +914,33 @@ def capture_epoch(epoch_s0, epoch_samples, info, target, fs=None,
 def extract_epochs(fs, queue, epoch_size, target, buffer_size=0,
                    empty_queue_cb=None, removed_queue=None, prestim_time=0,
                    poststim_time=0, source_complete=None):
-    '''
-    Coroutine to facilitate extracting epochs from an incoming stream of data
+    """
+    Extract epochs from an incoming stream of data based on trigger times.
 
     Parameters
     ----------
     fs : float
-        Sampling rate of input stream. Used to convert parameters specified in
-        seconds to number of samples.
+        Sampling rate.
     queue : deque
-        Instance of the collections.deque class containing information about
-        the epochs to extract. Must be a dictionary containing at least the
-        `t0` key (indicating the starting time, in seconds, of the epoch). The
-        `duration` key (indicating epoch duration, in seconds) is mandatory if
-        the `epoch_size` parameter is None. Optional keys include `key` (a
-        unique identifier for that epoch) and `metadata` (attributes that will
-        be attached to the epoch).
-    epoch_size : {None, float}
-        Size of epoch to extract, in seconds. If None, than the dictionaries
-        (provided via the queue) must contain a `duration` key.
-    buffer_size : float
-        Duration of samples to buffer in memory. If you anticipate needing to
-        "look back" and capture some epochs after the samples have already been
-        acquired, this value should be greater than 0.
+        Queue of epoch requests (dictionaries with 't0' and optional 'metadata').
+    epoch_size : float or None
+        Size of epoch in seconds. If None, requests must have 'duration'.
     target : callable
-        Callable that receives a list of epochs that were extracted. This is
-        typically another coroutine in the pipeline.
-    empty_queue_cb : {None, callable}
-        Callback function taking no arguments. Called when there are no more
-        epochs pending for capture and the queue is empty.
-    removed_queue : deque
-        Instance of the collections.deque class. Each entry in the queue must
-        contain at least the `t0` key and the `key` (if originally provided via
-        `queue`). If the epoch has not been fully captured yet, this epoch will
-        be removed from the list of epochs to capture.
+        Recipient of extracted epochs (as PipelineData).
+    buffer_size : float
+        Look-back buffer size in seconds.
+    empty_queue_cb : callable, optional
+        Called when queue is empty and all epochs are captured.
+    removed_queue : deque, optional
+        Queue of requests to cancel.
     prestim_time : float
-        Additional time to capture before the specified epoch start.
+        Time before t0 to include in epoch.
     poststim_time : float
-        Additional time to capture beyond the specified epoch size (or
-        `duration`).
-    source_complete : {None, Event}
-        If None, assume that once there are no more epochs to extract and call
-        the empty_queue_cb notification. If an Event, the empty_queue_cb
-        notification will be fired once the Event is set and there are no more
-        epochs to extract.
-    '''
-    # The variable `tlb` tracks the number of samples that have been acquired
-    # and reflects the lower bound of `data`. For example, if we have acquired
-    # 300,000 samples, then the next chunk of data received from (yield) will
-    # start at sample 300,000 (remember that Python is zero-based indexing, so
-    # the first sample has an index of 0).
+        Time after epoch_size to include.
+    source_complete : Event, optional
+        If set, signals that no more stimuli will be added to the queue.
+    """
     tlb = 0
-
     # This tracks the epochs that we are looking for. The key will be a
     # two-element tuple. key[0] is the starting time of the epoch to capture
     # and key[1] is a universally unique identifier. The key may be None, in
@@ -882,6 +1083,22 @@ def extract_epochs(fs, queue, epoch_size, target, buffer_size=0,
 
 @coroutine
 def accumulate(n, axis, newaxis, status_cb, target):
+    """
+    Accumulate data segments and concatenate once N segments are received.
+
+    Parameters
+    ----------
+    n : int
+        Number of segments to accumulate.
+    axis : int
+        Axis to concatenate along.
+    newaxis : bool
+        If True, add a new axis before concatenation.
+    status_cb : callable, optional
+        Called with the current count of accumulated segments.
+    target : callable
+        Recipient of concatenated data.
+    """
     data = []
     while True:
         d = (yield)
@@ -895,7 +1112,7 @@ def accumulate(n, axis, newaxis, status_cb, target):
         else:
             data.append(d)
         if len(data) == n:
-            data = concatenate(data, axis=axis)
+            data = concat(data, axis=axis)
             target(data)
             data = []
 
@@ -905,6 +1122,16 @@ def accumulate(n, axis, newaxis, status_cb, target):
 
 @coroutine
 def downsample(q, target):
+    """
+    Downsample data by integer factor q (decimation without filtering).
+
+    Parameters
+    ----------
+    q : int
+        Downsampling factor.
+    target : callable
+        Recipient of downsampled data.
+    """
     y_remainder = None
 
     while True:
@@ -928,6 +1155,16 @@ def downsample(q, target):
 
 @coroutine
 def decimate(q, target):
+    """
+    Decimate data by factor q (low-pass filtering followed by downsampling).
+
+    Parameters
+    ----------
+    q : int
+        Decimation factor.
+    target : callable
+        Recipient of decimated data.
+    """
     b, a = signal.cheby1(4, 0.05, 0.8 / q)
     if np.any(np.abs(np.roots(a)) > 1):
         raise ValueError('Unstable filter coefficients')
@@ -970,17 +1207,20 @@ def decimate(q, target):
 
 @coroutine
 def discard(discard_samples, cb):
-    '''
-    Discard samples.
+    """
+    Discard a fixed number of samples from the start of the stream.
 
+    Parameters
+    ----------
     discard_samples : int
         Number of samples to discard.
-    '''
+    cb : callable
+        Target for samples after discarding.
+    """
     to_discard = discard_samples
     while True:
         samples = (yield)
         if samples is Ellipsis:
-            # Restart the pipeline
             to_discard = discard_samples
             cb(samples)
             continue
@@ -997,6 +1237,18 @@ def discard(discard_samples, cb):
 
 @coroutine
 def capture(fs, queue, target):
+    """
+    Capture segments of data on command.
+
+    Parameters
+    ----------
+    fs : float
+        Sampling rate.
+    queue : deque
+        Queue of capture commands (t0).
+    target : callable
+        Recipient of captured segments.
+    """
     s0 = 0
     t_start = None  # Time, in seconds, of capture start
     s_next = None  # Sample number for capture
@@ -1033,6 +1285,16 @@ def capture(fs, queue, target):
 
 @coroutine
 def delay(n, target):
+    """
+    Introduce a delay of n samples by emitting NaNs first.
+
+    Parameters
+    ----------
+    n : int
+        Delay in samples.
+    target : callable
+        Recipient of delayed data.
+    """
     data = np.full(n, np.nan)
     while True:
         target(data)
@@ -1042,39 +1304,24 @@ def delay(n, target):
 @coroutine
 def edges(min_samples, target, initial_state=False, fs='auto', detect='both',
           min_events=0):
-    '''
-    Find the rising and falling edges of a binary (boolean) input. The output
-    is an instance of `Events`. Even if no edges are detected, an `Events`
-    instance (containing zero events) is generated. This enables downstream
-    steps to continue updating even if no events are detected.
+    """
+    Detect rising and falling edges in a boolean signal.
 
     Parameters
     ----------
-    initial_state : {int, bool}
-        Initial state of the system. Required to ensure that we properly detect
-        changes that may occur as soon as the pipeline begins.
     min_samples : int
-        Minimum number of samples required before a change is registered. This
-        is effectively a means of "debouncing" the signal.
-    fs : {'auto', float}
-        If `'auto'`, this must be part of a pipeline that processes
-        `PipelineData` as fs will be derived from the first `PipelineData`
-        segment.
+        Minimum samples for debouncing.
+    target : callable
+        Recipient of Events instance.
+    initial_state : bool, optional
+        Initial state of the signal.
+    fs : float or 'auto', optional
+        Sampling rate.
     detect : {'both', 'rising', 'falling'}
-        Edge to detect.
-    min_events : int
-        Minimum number of events to accumulate before sending results to next
-        stage of pipeline. If 0, an `Events` object with 0 events will always
-        be created and sent to the next stage of the pipeline. This can be
-        important for downstream code that is updating results in real-time
-        (e.g., computing the event rate and/or plotting event times).
-
-    Notes
-    -----
-    Incoming data is cast to boolean dtype. If the data is not already boolean,
-    then the data must have been transformed such that the logical low has a
-    value of 0. All non-zero values will be interpreted as a logical high.
-    '''
+        Type of edges to detect.
+    min_events : int, optional
+        Minimum number of events to accumulate before emitting.
+    """
     if min_samples < 1:
         raise ValueError('min_samples must be >= 1')
 
@@ -1099,7 +1346,6 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both',
     events_s0 = s0
 
     while True:
-        # Wait for new data to become available
         if new_samples.ndim == 1:
             pass
         elif (new_samples.ndim == 2) and (new_samples.shape[0] == 1):
@@ -1125,20 +1371,28 @@ def edges(min_samples, target, initial_state=False, fs='auto', detect='both',
             events_s0 = s0
 
         prior_samples = samples[..., -min_samples:]
-
         new_samples = (yield).astype('bool')
 
 
 @coroutine
 def average(n, target):
+    """
+    Running average of incoming segments.
+
+    Parameters
+    ----------
+    n : int
+        Number of segments to average.
+    target : callable
+    """
     data = (yield)
     axis = 0
     while True:
         while data.shape[axis] >= n:
             s = [Ellipsis] * data.ndim
-            s[axis] = np.s_[:block_size]
+            s[axis] = np.s_[:n]
             target(data[s].mean(axis=axis))
-            s[axis] = np.s_[block_size:]
+            s[axis] = np.s_[n:]
             data = data[s]
         new_data = (yield)
         data = np.concatenate((data, new_data), axis=axis)
@@ -1146,6 +1400,17 @@ def average(n, target):
 
 @coroutine
 def auto_scale(scale, baseline, target):
+    """
+    Automatically scale data based on a baseline period.
+
+    Parameters
+    ----------
+    scale : float
+        Target maximum value.
+    baseline : float
+        Duration in seconds for baseline calculation.
+    target : callable
+    """
     data = (yield)
     # Now that we have our first chunk of data, calculate some basics.
     fs = data.fs
@@ -1175,6 +1440,9 @@ def auto_scale(scale, baseline, target):
 
 @coroutine
 def continuous_auto_scale(scale, target):
+    """
+    Update scaling factor continuously based on global max seen so far.
+    """
     baseline_max = 0
     while True:
         data = (yield)
@@ -1190,48 +1458,33 @@ def continuous_auto_scale(scale, target):
 @coroutine
 def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None,
             current_th_cb=None):
-    '''
-    Automatically determine threshold based on input data standard deviation
+    """
+    Set threshold based on standard deviation of baseline.
 
     Parameters
     ----------
-    n : int
-        Number of standard deviations to fix threshold at.
+    n : float
+        Standard deviations for threshold.
     baseline : float
-        Duration, in seconds, to use for calculating baseline standard
-        deviation.
-    fs : {'auto', float}
-        Sampling rate of data. If `'auto'`, this coroutine must be part of a
-        pipeline that is processing `PipelineData` as `fs` will be derived from
-        the first `PipelineData` segment.
+        Duration of baseline in seconds.
+    target : callable
+        Recipient of boolean thresholded data.
+    fs : float or 'auto', optional
     mode : {'positive', 'negative', 'both'}
-        Whether to detect positive (i.e., x >= th), negative (i.e., x <= th),
-        or both (i.e., x >= th or x <= th) deflections.
-    auto_th_cb : {callable, None}
-        If a callable is provided, this will be called with a single argument
-        (the calculated auto-threshold).
-    current_th_cb : {callable, None}
-        If a callable is provided, this will be used to get the current
-        threshold (which will override the automatically set threshold).
-
-    Once the threshold has been determined, the portion of the input data
-    collected for determining the threshold will then be thresholded and passed
-    to the next stage in the pipeline.
-    '''
+    auto_th_cb : callable, optional
+        Callback for calculated threshold.
+    current_th_cb : callable, optional
+        Callback to override calculated threshold.
+    """
     data = (yield)
 
-    # Now that we have our first chunk of data, calculate some basics.
-    if fs is None:
+    if fs == 'auto':
         fs = data.fs
     baseline_samples = int(np.round(baseline * fs))
 
-    # Accumulate data until we have spooled enough to do our baseline estimate.
-    # All pipeline steps downstream from this one will appear to be
-    # unresponsive until this step completes.
     while data.shape[-1] < baseline_samples:
         data = concat((data, (yield)), axis=-1)
 
-    # Now, discard the pre-baseline samples.
     auto_th = data[..., :baseline_samples].view(np.ndarray).std() * n
     log.info('Automatic threshold set to %f', auto_th)
     if auto_th_cb is not None:
@@ -1247,8 +1500,6 @@ def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None,
     else:
         raise ValueError(f'Unsupported mode: "{mode}"')
 
-    # Immediately send the data accumulated for the baseline (plus any extra
-    # data that was captured), then wait for the next chunk of data.
     while True:
         if isinstance(data, PipelineData):
             data.metadata['auto_th'] = th
@@ -1258,16 +1509,15 @@ def auto_th(n, baseline, target, fs='auto', mode='positive', auto_th_cb=None,
 
 @coroutine
 def derivative(initial_state, target):
-    '''
-    Take the time derivative of the input. Can be used to transform a position
-    reading into velocity.
+    """
+    Time derivative of input signal.
 
     Parameters
     ----------
     initial_state : float
-        Initial state of the system. Required to ensure that we properly
-        calculate derivative of first time sample.
-    '''
+        Initial value for calculation.
+    target : callable
+    """
     new_samples = (yield)
     initial_shape = list(new_samples.shape)
     initial_shape[-1] = 1
@@ -1287,16 +1537,17 @@ def derivative(initial_state, target):
 
 @coroutine
 def extract_power(frequency, window, target):
-    '''
-    Extract power using quadrature demodulation
+    """
+    Quadrature demodulation to extract power at a specific frequency.
 
     Parameters
     ----------
     frequency : float
-        Frequency to extract.
+        Target frequency.
     window : str
-        Name of Scipy signal window to apply
-    '''
+        Scipy window name.
+    target : callable
+    """
     kernel = None
     n = None
 
@@ -1322,31 +1573,18 @@ def extract_power(frequency, window, target):
 ################################################################################
 @coroutine
 def event_rate(block_size, block_step, target, s0_mode='center'):
-    '''
-    Calculate the rate at which events occur using a sliding temporal window.
+    """
+    Calculate sliding-window event rate.
 
     Parameters
     ----------
     block_size : int
-        Size of window, in samples, to calculate event rate over.
-    block_step : float
-        Increment, in samples, to advance window before calculating next event
-        rate.
+        Window size in samples.
+    block_step : int
+        Step size in samples.
+    target : callable
     s0_mode : {'center', 'left', 'right'}
-        Controls how the initial s0 of the resulting PipelineData object is
-        determined. If `'center'`, s0 will reflect the center of the block over
-        which the event rate is calculated. If `'left'` or `'right'`, s0 will
-        reflect either the beginning or end of the block, respectively, over
-        which the event rate is calculated.
-
-    This coroutine must be part of a pipeline in which the previous stage
-    outputs an `Events` instance. As `Events` instances are acquired, they are
-    merged and then split into discrete blocks of `block_size`. The starting
-    time of each block is advanced by `block_step`. If `block_step` is less
-    than `block_size`, then the blocks will overlap. This allows us to
-    effectively apply a sliding window approach to calculating event rate over
-    time.
-    '''
+    """
     events = (yield)
     s0 = events.start + block_size * 0.5
     fs = events.fs / block_step
@@ -1379,6 +1617,14 @@ def event_rate(block_size, block_step, target, s0_mode='center'):
 ################################################################################
 @coroutine
 def mc_reference(matrix, target):
+    """
+    Apply a referencing matrix to multichannel data.
+
+    Parameters
+    ----------
+    matrix : np.ndarray
+        Referencing matrix.
+    """
     while True:
         data = matrix @ (yield)
         target(data)
@@ -1386,6 +1632,16 @@ def mc_reference(matrix, target):
 
 @coroutine
 def mc_select(channel, labels, target):
+    """
+    Select a specific channel from multichannel data.
+
+    Parameters
+    ----------
+    channel : int or str
+        Channel index or label.
+    labels : list of str
+        List of channel labels.
+    """
     if isinstance(channel, int):
         i = channel
     elif labels is not None:
@@ -1405,6 +1661,14 @@ def mc_select(channel, labels, target):
 ################################################################################
 @coroutine
 def detrend(mode, target):
+    """
+    Detrend epoched data.
+
+    Parameters
+    ----------
+    mode : {None, 'constant', 'linear'}
+        Detrending mode.
+    """
     while True:
         data = (yield)
         if isinstance(data, PipelineData) and data.ndim != 3:
@@ -1421,6 +1685,16 @@ def detrend(mode, target):
 
 @coroutine
 def events_to_info(trigger_edge, base_info, target):
+    """
+    Convert events to epoch info dictionaries.
+
+    Parameters
+    ----------
+    trigger_edge : str
+        Event name that triggers epoching.
+    base_info : dict
+        Base metadata for the epoch.
+    """
     while True:
         events = (yield)
         results = []
@@ -1434,25 +1708,20 @@ def events_to_info(trigger_edge, base_info, target):
 
 @coroutine
 def reject_epochs(reject_threshold, mode, status_cb, valid_target):
-    '''
-    Discard epochs containing artifacts
+    """
+    Discard epochs containing artifacts based on threshold.
 
     Parameters
     ----------
-    reject_threshold : {float, callable}
-        If callble, this will be called each time this coroutine is invoked
-        allowing threshold to be updated during long-running experiments.
+    reject_threshold : float or callable
+        Rejection threshold.
     mode : {'absolute value', 'amplitude'}
-        Specifies reject method:
-        * 'absolute value': rejected if max(abs(signal)) > reject_threshold
-        * 'amplitude': rejected if (max(s) - min(s)) > reject_threshold
-    status_cb : {None, callable}
-        If provided, must be a callback that takes two arguments, the number of
-        epochs reviewed and the number of epochs rejected on that particular
-        invocation of the callback.
-    valid_target : {coroutine, callable}
-        Target to send accepted (i.e., not rejected) epochs to.
-    '''
+        Rejection logic.
+    status_cb : callable
+        Callback with boolean mask of accepted epochs.
+    valid_target : callable
+        Recipient of accepted epochs.
+    """
     if mode == 'absolute value':
         accept = lambda s, th: np.max(np.abs(s), axis=-1) < th
     elif mode == 'amplitude':
@@ -1485,9 +1754,6 @@ def reject_epochs(reject_threshold, mode, status_cb, valid_target):
         valid_data = data[mask]
         if isinstance(valid_data, PipelineData):
             valid_data.add_metadata('reject_threshold', th)
-
-        n = len(data)
-        n_accept = len(valid_data)
 
         if len(valid_data) != 0:
             valid_target(valid_data)

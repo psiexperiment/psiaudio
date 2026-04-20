@@ -6,7 +6,8 @@ For now, we only have galleries.
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
-   :hidden:
+
+   pipeline_overview
 
 .. toctree::
    :maxdepth: 2

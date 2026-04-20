@@ -276,6 +276,8 @@ class AbstractSignalQueue:
                 duration = source.shape[-1]/self._fs
             else:
                 duration = source.get_duration()
+        if metadata is None:
+            metadata = {}
 
         data = {
             'source': copy.deepcopy(source),
