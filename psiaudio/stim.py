@@ -136,11 +136,11 @@ class Waveform:
 
     def get_duration(self):
         """Get total duration of the waveform in seconds."""
-        raise NotImplementedException
+        raise NotImplementedError
 
     def is_complete(self):
         """Check if generation is complete."""
-        raise NotImplementedException
+        raise NotImplementedError
 
 
 class ContinuousWaveform(Waveform):
