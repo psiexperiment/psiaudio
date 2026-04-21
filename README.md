@@ -1,5 +1,7 @@
 # psiaudio
 
+Documentation is hosted by [Github Pages](https://psiexperiment.github.io/psiaudio/).
+
 Tools for auditory signal generation and processing. Provides:
 
 * Finite and infinite signal generation support
