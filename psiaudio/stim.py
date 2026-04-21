@@ -2026,8 +2026,7 @@ def apply_cos2envelope(waveform, fs, rise_time, duration=None, start_time=0):
     return env * waveform
 
 
-def gap(fs, fc, octaves, gap, duration_a, duration_b, rise_time, level,
-        calibration):
+def gap(fs, fc, octaves, gap, durations, rise_time, level, calibration):
     """
     Generate an acoustic gap stimulus consisting of two markers separated by silence.
 
@@ -2047,10 +2046,9 @@ def gap(fs, fc, octaves, gap, duration_a, duration_b, rise_time, level,
         generates a pure tone instead of noise.
     gap : float
         The duration of the silent gap separating the two markers, in seconds.
-    duration_a : float
-        The duration of the leading acoustic marker (pre-gap), in seconds.
-    duration_b : float
-        The duration of the trailing acoustic marker (post-gap), in seconds.
+    durations : list/array of float
+        The durations of the acoustic markers separating the gap, in seconds.
+        Must be at least two (for a single gap).
     rise_time : float
         The rise and fall time for the Gaussian envelope windows, in seconds.
     level : float
@@ -2064,21 +2062,23 @@ def gap(fs, fc, octaves, gap, duration_a, duration_b, rise_time, level,
     ndarray
         A 1D numpy array containing the generated audio waveform of the gap stimulus.
     """
-    env_a = envelope(
-        fs=fs,
-        window='gaussian',
-        rise_time=rise_time,
-        duration=duration_a,
-    )
-    env_b = envelope(
-        fs=fs,
-        window='gaussian',
-        rise_time=rise_time,
-        duration=duration_b,
-    )
-    gap = np.zeros(int(round(gap * fs)))
-    env = np.concatenate([env_a, gap, env_b])
-    
+    envelopes = []
+    for d in durations:
+        e = envelope(
+            fs=fs,
+            window='gaussian',
+            rise_time=rise_time,
+            duration=d,
+        )
+        envelopes.append(e)
+        g = np.zeros(int(round(gap * fs)))
+        envelopes.append(g)
+
+    # Don't include the final envelope, which is the zero-padded gap that was
+    # created in the loop. We only want the silent portions to appear in
+    # between the durations.
+    env = np.concatenate(envelopes[:-1])
+
     if octaves != 0:
         fl = fc / (2 ** (octaves / 2))
         fh = fc * (2 ** (octaves / 2))
