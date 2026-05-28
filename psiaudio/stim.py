@@ -694,14 +694,21 @@ def notch_noise(fs, notch_frequency, q, level, duration, seed=1,
 @fast_cache
 def _calculate_bandlimited_noise_filter(fs, fl, fh, fls, fhs,
                                         passband_attenuation,
-                                        stopband_attenuation):
+                                        stopband_attenuation,
+                                        use_sos=False):
     Wp = np.array([fl, fh])/(0.5*fs)
     Ws = np.array([fls, fhs])/(0.5*fs)
-    b, a = signal.iirdesign(Wp, Ws, passband_attenuation, stopband_attenuation)
-    if np.any(np.abs(np.roots(a)) >= 1):
-        raise ValueError('Unstable filter coefficients')
-    zi = signal.lfilter_zi(b, a)
-    return b, a, zi
+    if use_sos:
+        sos = signal.iirdesign(Wp, Ws, passband_attenuation, stopband_attenuation,
+                               output='sos')
+        zi = signal.sosfilt_zi(sos)
+        return sos, zi
+    else:
+        b, a = signal.iirdesign(Wp, Ws, passband_attenuation, stopband_attenuation)
+        if np.any(np.abs(np.roots(a)) >= 1):
+            raise ValueError('Unstable filter coefficients')
+        zi = signal.lfilter_zi(b, a)
+        return b, a, zi
 
 
 @fast_cache
@@ -721,7 +728,8 @@ class BandlimitedNoiseFactory(Carrier):
     '''
     def __init__(self, fs, seed, level, fl, fh, filter_rolloff,
                  passband_attenuation, stopband_attenuation, equalize=False,
-                 polarity=1, calibration=None, discard_initial_samples=True):
+                 polarity=1, calibration=None, discard_initial_samples=True,
+                 use_sos=False):
 
         self.fs = fs
         self.level = level
@@ -736,6 +744,7 @@ class BandlimitedNoiseFactory(Carrier):
         self.fl = fl
         self.fh = fh
         self.discard_initial_samples = discard_initial_samples
+        self.use_sos = use_sos
 
         # Calculate the scaling factor for the noise
         pass_bandwidth = fh-fl
@@ -759,10 +768,17 @@ class BandlimitedNoiseFactory(Carrier):
         # Calculate the stop bandwidth as octaves above and below the passband.
         # Precompute the filter settings.
         fls, fhs = fl*(2**-filter_rolloff), fh*(2**filter_rolloff)
-        self.b, self.a, self.initial_bp_zi = \
-            _calculate_bandlimited_noise_filter(fs, fl, fh, fls, fhs,
-                                                passband_attenuation,
-                                                stopband_attenuation)
+        if use_sos:
+            self.sos, self.initial_bp_zi = \
+                _calculate_bandlimited_noise_filter(fs, fl, fh, fls, fhs,
+                                                    passband_attenuation,
+                                                    stopband_attenuation,
+                                                    use_sos=True)
+        else:
+            self.b, self.a, self.initial_bp_zi = \
+                _calculate_bandlimited_noise_filter(fs, fl, fh, fls, fhs,
+                                                    passband_attenuation,
+                                                    stopband_attenuation)
 
         # Calculate the IIR filter if we are equalizing the noise.
         if equalize:
@@ -783,14 +799,17 @@ class BandlimitedNoiseFactory(Carrier):
         waveform = self.state.uniform(low=self.low, high=self.high, size=samples)
         if self.equalize:
             waveform, self.iir_zi = signal.lfilter(self.iir, [1], waveform, zi=self.iir_zi)
-        waveform, self.bp_zi = signal.lfilter(self.b, self.a, waveform, zi=self.bp_zi)
+        if self.use_sos:
+            waveform, self.bp_zi = signal.sosfilt(self.sos, waveform, zi=self.bp_zi)
+        else:
+            waveform, self.bp_zi = signal.lfilter(self.b, self.a, waveform, zi=self.bp_zi)
         return waveform * self.polarity
 
 
 def bandlimited_noise(fs, level, fl, fh, duration=None, filter_rolloff=1,
                       passband_attenuation=1, stopband_attenuation=80,
                       equalize=False, polarity=1, seed=1, samples='auto',
-                      calibration=None):
+                      calibration=None, use_sos=False):
 
     args = locals()
     args.pop('duration')
@@ -2026,7 +2045,8 @@ def apply_cos2envelope(waveform, fs, rise_time, duration=None, start_time=0):
     return env * waveform
 
 
-def gap(fs, fc, octaves, gap, durations, rise_time, level, calibration):
+def gap(fs, fc, octaves, gap, durations, rise_time, level, calibration,
+        filter_rolloff=1, use_sos=True):
     """
     Generate an acoustic gap stimulus consisting of two markers separated by silence.
 
@@ -2089,6 +2109,8 @@ def gap(fs, fc, octaves, gap, durations, rise_time, level, calibration):
             fh=fh,
             samples=len(env),
             calibration=calibration,
+            filter_rolloff=filter_rolloff,
+            use_sos=use_sos,
         )
     else:
         carrier = tone(
