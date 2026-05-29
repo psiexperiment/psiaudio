@@ -7,7 +7,7 @@ from scipy import signal
 
 from psiaudio import calibration, stim, util
 
-from conftest import assert_chunked_generation
+from .helpers import assert_chunked_generation
 
 
 def test_tone_factory():

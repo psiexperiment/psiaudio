@@ -5,7 +5,7 @@ from numpy.testing import assert_array_almost_equal, assert_array_equal
 
 from psiaudio import stim, util
 
-from conftest import assert_chunked_generation
+from .helpers import assert_chunked_generation
 
 
 @pytest.fixture(scope='module', params=[20, 80, 140])
