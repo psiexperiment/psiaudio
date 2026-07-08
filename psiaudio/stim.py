@@ -2046,7 +2046,7 @@ def apply_cos2envelope(waveform, fs, rise_time, duration=None, start_time=0):
 
 
 def gap(fs, fc, octaves, gap, durations, rise_time, level, calibration,
-        filter_rolloff=1, use_sos=True):
+        filter_rolloff=1, use_sos=True, constant_level=True, seed=None):
     """
     Generate an acoustic gap stimulus consisting of two markers separated by silence.
 
@@ -2076,6 +2076,11 @@ def gap(fs, fc, octaves, gap, durations, rise_time, level, calibration,
     calibration : float or object
         The calibration factor or object required by the carrier generation 
         functions to correctly scale the output amplitude based on the `level`.
+    constant_level : bool
+        If True, rescales the overall waveform to ensure that there are no
+        level cues introduced by the gap.
+    seed : None or int
+        Seed to use for randomness. Set to None to vary the token on each trial.
 
     Returns
     -------
@@ -2111,6 +2116,7 @@ def gap(fs, fc, octaves, gap, durations, rise_time, level, calibration,
             calibration=calibration,
             filter_rolloff=filter_rolloff,
             use_sos=use_sos,
+            seed=seed,
         )
     else:
         carrier = tone(
@@ -2121,4 +2127,7 @@ def gap(fs, fc, octaves, gap, durations, rise_time, level, calibration,
             calibration=calibration,
         )
 
-    return env * carrier
+    waveform = env * carrier
+    if constant_level:
+        waveform *= util.rms(carrier) / util.rms(waveform)
+    return waveform
