@@ -231,30 +231,63 @@ def _phase(csd, unwrap=True):
     return p
 
 
-def phase(s, fs, window=None, waveform_averages=None, unwrap=True):
+def phase(s, fs, window=None, waveform_averages=None, unwrap=True,
+          trim_samples=True, **kw):
     """
     Extract phase from a signal.
 
     Parameters
     ----------
     s : array_like
-        Input signal.
+        Input signal. The last axis is always assumed to be time.
     fs : float
         Sampling rate.
     window : str, optional
-        Window name, by default None.
+        Window to apply to the signal before transforming, by default None
+        (no window).
     waveform_averages : int, optional
-        Number of averages, by default None.
+        Number of equal-length segments to split the last axis into and
+        average together. By default None, which is treated as 1 (no
+        averaging).
     unwrap : bool, optional
-        Whether to unwrap phase angle, by default True.
+        Whether to unwrap the phase angle along the frequency axis, by default
+        True.
+    trim_samples : bool, optional
+        If True (default), discard trailing samples so the last axis divides
+        evenly into ``waveform_averages`` segments. If False, the reshape will
+        raise when it does not divide evenly.
+    **kw
+        Additional keyword arguments passed to :func:`csd` (notably
+        ``detrend``, which defaults to ``'linear'`` there).
 
     Returns
     -------
     ndarray
         Phase of the signal in radians.
+
+    Notes
+    -----
+    Averaging is **coherent**: the complex spectra of the segments are averaged
+    before the angle is taken. Averaging the angles themselves would be wrong,
+    since phase is a circular quantity and individual angles wrap at
+    :math:`\\pm\\pi`.
+
+    This mirrors the segmenting behavior of :func:`psd`, so ``phase`` and
+    ``psd`` called with the same arguments describe the same spectra. Note that
+    :func:`psd` averages the *magnitudes* of the segment spectra, which is the
+    appropriate reduction for a magnitude; coherent averaging is the
+    appropriate one for a phase.
     """
-    c = csd(s, window, waveform_averages)
-    return _phase(c, unwrap)
+    s = np.asarray(s)
+    if waveform_averages is None:
+        waveform_averages = 1
+    if trim_samples:
+        n = (s.shape[-1] // waveform_averages) * waveform_averages
+        s = s[..., :n]
+    new_shape = s.shape[:-1] + (waveform_averages, -1)
+    s = s.reshape(new_shape)
+    c = csd(s, window=window, **kw)
+    return _phase(c.mean(axis=-2), unwrap)
 
 
 def psd(s, fs, window=None, waveform_averages=None, trim_samples=True, **kw):

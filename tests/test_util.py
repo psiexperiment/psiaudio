@@ -294,3 +294,114 @@ def test_psd_df():
     assert psd.columns.name == 'frequency'
     actual = psd[[1e3, 2e3]].values
     np.testing.assert_array_almost_equal(actual, expected)
+
+
+def test_phase_tone():
+    '''
+    A tone built with a known phase offset reports that offset at its own bin.
+    '''
+    fs = 10e3
+    for expected in (0.0, 1.0, -2.0, 3.0):
+        tone = make_tone(fs, 1e3, 1, phase=expected)
+        p = util.phase(tone, fs, unwrap=False, detrend=None)
+        freqs = util.psd_freq(tone, fs)
+        k = int(np.argmin(np.abs(freqs - 1e3)))
+        assert p[k] == pytest.approx(expected, abs=1e-6)
+
+
+def test_phase_2d():
+    '''
+    Each row of a 2D input keeps its own phase; the time axis is the last one.
+    '''
+    fs = 10e3
+    tones = np.vstack((make_tone(fs, 1e3, 1, phase=0.5),
+                       make_tone(fs, 1e3, 1, phase=-1.5)))
+    p = util.phase(tones, fs, unwrap=False, detrend=None)
+    freqs = util.psd_freq(tones, fs)
+    k = int(np.argmin(np.abs(freqs - 1e3)))
+    assert p.shape == (2, len(freqs))
+    assert p[0, k] == pytest.approx(0.5, abs=1e-6)
+    assert p[1, k] == pytest.approx(-1.5, abs=1e-6)
+
+
+def test_phase_detrend_default():
+    '''
+    The default call must detrend linearly, matching ``csd`` and ``psd``.
+
+    Regression test: ``phase`` used to forward ``waveform_averages`` into
+    ``csd``'s ``detrend`` slot, so the default silently became
+    ``detrend=None`` and disagreed with ``psd`` on the same input.
+    '''
+    fs = 10e3
+    n = int(fs)
+    trending = 0.01 * make_tone(fs, 1e3, 1) + np.linspace(0, 10, n)
+
+    default = util.phase(trending, fs)
+    assert default == pytest.approx(util.phase(trending, fs, detrend='linear'))
+    assert default != pytest.approx(util.phase(trending, fs, detrend=None))
+
+
+def test_phase_averages():
+    '''
+    ``waveform_averages`` splits the time axis and averages, as ``psd`` does.
+
+    Regression test: any integer value used to land in ``csd``'s ``detrend``
+    argument and raise.
+    '''
+    fs = 10e3
+    tone = make_tone(fs, 1e3, 1, phase=1.0)
+
+    for averages in (None, 1, 2, 4):
+        p = util.phase(tone, fs, waveform_averages=averages, unwrap=False,
+                       detrend=None)
+        # Same segmenting as psd, so the two stay directly comparable.
+        assert p.shape == util.psd(tone, fs, waveform_averages=averages).shape
+
+        n = tone.shape[-1] // (averages if averages else 1)
+        freqs = np.fft.rfftfreq(n, 1 / fs)
+        assert len(p) == len(freqs)
+        k = int(np.argmin(np.abs(freqs - 1e3)))
+        assert p[k] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_phase_averages_are_coherent():
+    '''
+    Averaging is done on the complex spectra, not on the angles.
+
+    Two segments sitting either side of the +/-pi wrap average to pi. Averaging
+    the angles themselves would give 0, which is the opposite direction.
+    '''
+    fs = 10e3
+    segments = [make_tone(fs, 100.0, 0.5, phase=3.0),
+                make_tone(fs, 100.0, 0.5, phase=-3.0)]
+    signal = np.concatenate(segments)
+
+    p = util.phase(signal, fs, waveform_averages=2, unwrap=False,
+                   detrend=None)
+    freqs = np.fft.rfftfreq(len(segments[0]), 1 / fs)
+    k = int(np.argmin(np.abs(freqs - 100.0)))
+
+    # Coherent average of exp(3j) and exp(-3j) is real and negative, so the
+    # angle is +/-pi.
+    assert abs(p[k]) == pytest.approx(np.pi, abs=1e-6)
+
+    individual = [util.phase(s, fs, unwrap=False, detrend=None)[k]
+                  for s in segments]
+    assert np.mean(individual) == pytest.approx(0, abs=1e-6)
+
+
+def test_phase_df_averages():
+    '''
+    ``phase_df`` indexes by the frequencies of the averaged segments.
+
+    Regression test: this call used to raise, because ``_as_df`` forwards
+    ``waveform_averages`` to ``phase`` by keyword.
+    '''
+    fs = 10e3
+    tone = make_tone(fs, 1e3, 1, phase=1.0)
+
+    p = util.phase_df(tone, fs, waveform_averages=4, unwrap=False,
+                      detrend=None)
+    assert p.index.name == 'frequency'
+    assert len(p) == len(np.fft.rfftfreq(tone.shape[-1] // 4, 1 / fs))
+    assert p.loc[1e3] == pytest.approx(1.0, abs=1e-6)
