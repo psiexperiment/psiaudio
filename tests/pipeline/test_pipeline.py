@@ -62,7 +62,7 @@ def feed_pipeline(cb, data, include_offset=False):
     return result
 
 
-@pytest.mark.parametrize('data,', ['data1d', 'data2d'])
+@pytest.mark.parametrize('data', ['data1d', 'data2d'])
 def test_capture_epoch(fs, data, request):
     data = request.getfixturevalue(data)
     s0 = 12345
@@ -79,7 +79,7 @@ def test_capture_epoch(fs, data, request):
     assert result[0].channel == expected.channel
 
 
-@pytest.mark.parametrize('data_fixture,', ['data1d', 'data2d'])
+@pytest.mark.parametrize('data_fixture', ['data1d', 'data2d'])
 def test_extract_epochs(fs, data_fixture, request):
     if data_fixture == 'data1d':
         n_channels = 1
@@ -98,7 +98,7 @@ def test_extract_epochs(fs, data_fixture, request):
     assert_pipeline_data_equal(actual, expected)
 
 
-@pytest.mark.parametrize('data,', ['data1d', 'data2d'])
+@pytest.mark.parametrize('data', ['data1d', 'data2d'])
 def test_rms(fs, data, request):
     data = request.getfixturevalue(data)
 
@@ -122,7 +122,7 @@ def test_rms(fs, data, request):
     assert actual_rms.s0 == 0
 
 
-@pytest.mark.parametrize('data,', ['tone1d', 'tone2d'])
+@pytest.mark.parametrize('data', ['tone1d', 'tone2d'])
 def test_rms_band(fs, data, request):
     data = request.getfixturevalue(data)
 
@@ -150,7 +150,7 @@ def test_rms_band(fs, data, request):
     assert actual_rms.s0 == 0
 
 
-@pytest.mark.parametrize('data,', ['data1d', 'data2d'])
+@pytest.mark.parametrize('data', ['data1d', 'data2d'])
 def test_iirfilter(fs, data, stim_fl, stim_fh, request):
     # Note, do not remove `fs` from the list of arguments. This seems to be
     # necessary to allow pytest to run. Not sure why, but
@@ -171,7 +171,7 @@ def test_iirfilter(fs, data, stim_fl, stim_fh, request):
     np.testing.assert_array_equal(actual, expected)
 
 
-@pytest.mark.parametrize('data,', ['data1d', 'data2d'])
+@pytest.mark.parametrize('data', ['data1d', 'data2d'])
 def test_blocked(fs, data, request):
     data = request.getfixturevalue(data)
     cb = partial(pipeline.blocked, 100)
