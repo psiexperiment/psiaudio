@@ -2,8 +2,12 @@
 Golden-file regression tests for stim.py.
 
 Each test regenerates a waveform with fixed parameters and compares it
-sample-for-sample against a reference .npy file stored in tests/fixtures/.
-Any change in output — intentional or not — will cause the test to fail.
+against a reference .npy file stored in tests/fixtures/. Any change in output
+— intentional or not — will cause the test to fail.
+
+Comparison is exact for everything whose output is plain deterministic
+arithmetic. The exception is listed in ``TOLERANT`` below; see the comment
+there for why.
 
 To regenerate the reference files after an intentional change:
     python tests/fixtures/generate_fixtures.py
@@ -13,12 +17,32 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_allclose, assert_array_equal
 
 from psiaudio import calibration, stim, util
 
 FIXTURE_DIR = Path(__file__).parent / 'fixtures'
 CAL = calibration.FlatCalibration.from_spl(94)
+
+# Fixtures compared with a tolerance instead of exactly, keyed by fixture name.
+#
+# ``bandlimited_noise`` defaults to ``use_sos=False``, so its bandpass is
+# designed and applied in polynomial (b, a) form. That form is poorly
+# conditioned here, and its output is only reproducible to ~1e-4: within a
+# single environment, switching the same filter to second-order sections
+# (``use_sos=True``) moves the waveform by 3.9e-4 on a peak of 0.80. A scipy
+# change to `iirfilter` or `lfilter` therefore shifts it by about that much,
+# which is a library detail rather than a regression in psiaudio.
+#
+# atol is set an order of magnitude below the smallest intentional change we
+# would want to catch: regenerating the gap fixtures for a real behavior change
+# moved them by ~8e-2, roughly 80x this tolerance.
+#
+# Note the other filtered stimuli do not need this: ``gap`` already defaults to
+# ``use_sos=True``, and its ba/sos outputs agree exactly.
+TOLERANT = {
+    'bandlimited_noise_1k_8k_500ms_seed1_fs100k': dict(rtol=1e-4, atol=1e-3),
+}
 
 
 def _load(name):
@@ -70,10 +94,13 @@ def _load(name):
         'bandlimited_noise_1k_8k_500ms_seed1_fs100k',
         id='bandlimited_noise',
     ),
+    # ``seed`` must be given explicitly for the noise-carrier cases: gap()
+    # defaults to seed=None, which varies the noise token on every call, so an
+    # unseeded case could never match a stored fixture.
     pytest.param(
         stim.gap,
         dict(fs=100e3, fc=4e3, octaves=1, gap=5e-3, durations=[0.05, 0.05],
-             rise_time=5e-3, level=80, calibration=CAL),
+             rise_time=5e-3, level=80, calibration=CAL, seed=1),
         'gap_noise_4k_1oct_5ms_2x50ms_fs100k',
         id='gap_noise_single',
     ),
@@ -88,7 +115,7 @@ def _load(name):
         stim.gap,
         dict(fs=100e3, fc=4e3, octaves=1, gap=5e-3,
              durations=[0.05, 0.05, 0.05], rise_time=5e-3, level=80,
-             calibration=CAL),
+             calibration=CAL, seed=1),
         'gap_noise_4k_1oct_5ms_3x50ms_fs100k',
         id='gap_noise_multiple',
     ),
@@ -101,7 +128,12 @@ def _load(name):
     ),
 ])
 def test_golden(func, kwargs, fixture):
-    assert_array_equal(func(**kwargs), _load(fixture))
+    actual = func(**kwargs)
+    expected = _load(fixture)
+    if (tol := TOLERANT.get(fixture)) is not None:
+        assert_allclose(actual, expected, **tol)
+    else:
+        assert_array_equal(actual, expected)
 
 
 # ---------------------------------------------------------------------------

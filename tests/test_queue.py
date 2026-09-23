@@ -285,6 +285,7 @@ def test_fifo_queue_pause_resume_timing(fs):
     samples = int(fs)
     queue, conn, _, _, _ = make_queue(fs, 'FIFO', (1e3, 5e3), trials)
     queue.pop_buffer(samples)
+    time.sleep(0.1)  # Let background thread flush 'added' events before clearing
     conn.clear()
     queue.pause(0.1025)
     queue.pop_buffer(samples)
@@ -320,11 +321,11 @@ def test_fifo_queue_ordering(fs):
                                empty_queue_cb=mark_empty)
 
     waveform = queue.pop_buffer(samples)
+    time.sleep(0.1)  # Let background thread populate conn before processing
+    metadata = list(conn)  # Snapshot before extractor consumes conn
     extractor.send(waveform)
-    time.sleep(0.1)
     assert queue_empty
 
-    metadata = list(conn)
     for md in metadata[:trials]:
         assert k1 == md['key']
     for md in metadata[trials:]:
@@ -363,12 +364,11 @@ def test_interleaved_fifo_queue_ordering(fs):
                                empty_queue_cb=mark_empty)
 
     waveform = queue.pop_buffer(samples)
+    time.sleep(0.1)  # Let background thread populate conn before processing
+    metadata = list(conn)  # Snapshot before extractor consumes conn
     extractor.send(waveform)
-    time.sleep(0.2)
     assert queue_empty
 
-    # Verify that keys are ordered properly
-    metadata = list(conn)
     for md in metadata[::2]:
         assert k1 == md['key']
     for md in metadata[1::2]:

@@ -2,6 +2,13 @@ import pytest
 
 from psiaudio import calibration
 
+try:
+    import pytest_benchmark  # noqa: F401
+except ImportError:
+    @pytest.fixture
+    def benchmark():
+        pytest.skip('pytest-benchmark not installed')
+
 
 def pytest_addoption(parser):
     parser.addoption('--slow', action='store_true', dest='slow', default=False,

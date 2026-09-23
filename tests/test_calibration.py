@@ -192,7 +192,9 @@ def test_flat_calibration_to_mv_pa():
 
 
 def test_interp_cal_bounds(interp_calibration):
-    assert np.isnan(interp_calibration.get_spl(50, 1))
+    with pytest.raises(ValueError, match='uncalibrated'):
+        interp_calibration.get_spl(50, 1)
     assert interp_calibration.get_spl(500, 1) == 80
     assert interp_calibration.get_spl(16000, 1) == 80
-    assert np.isnan(interp_calibration.get_spl(20000, 1))
+    with pytest.raises(ValueError, match='uncalibrated'):
+        interp_calibration.get_spl(20000, 1)

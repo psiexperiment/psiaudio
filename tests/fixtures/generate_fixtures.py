@@ -57,9 +57,12 @@ FIXTURES = {
     # ------------------------------------------------------------------
     # Gap stimuli (recently active in development)
     # ------------------------------------------------------------------
+    # ``seed`` must be given explicitly for the noise-carrier cases: gap()
+    # defaults to seed=None, which varies the noise token on every call, so an
+    # unseeded fixture would never reproduce.
     'gap_noise_4k_1oct_5ms_2x50ms_fs100k': lambda: stim.gap(
         fs=100e3, fc=4e3, octaves=1, gap=5e-3, durations=[0.05, 0.05],
-        rise_time=5e-3, level=80, calibration=CAL),
+        rise_time=5e-3, level=80, calibration=CAL, seed=1),
 
     'gap_tone_4k_5ms_2x50ms_fs100k': lambda: stim.gap(
         fs=100e3, fc=4e3, octaves=0, gap=5e-3, durations=[0.05, 0.05],
@@ -68,7 +71,7 @@ FIXTURES = {
     'gap_noise_4k_1oct_5ms_3x50ms_fs100k': lambda: stim.gap(
         fs=100e3, fc=4e3, octaves=1, gap=5e-3,
         durations=[0.05, 0.05, 0.05], rise_time=5e-3, level=80,
-        calibration=CAL),
+        calibration=CAL, seed=1),
 
     # ------------------------------------------------------------------
     # SAM envelope
