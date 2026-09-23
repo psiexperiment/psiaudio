@@ -53,6 +53,14 @@ class NotifierQueue:
 
     def __init__(self):
         self.queue = deque()
+
+        # Number of notifications queued but not yet delivered to every
+        # callback, and a condition signaled when it drops to zero. Used by
+        # `join`; the deque alone can't say, since it is already empty while
+        # the last notification's callbacks are still running.
+        self._pending = 0
+        self._idle = threading.Condition()
+
         self.worker_thread = threading.Thread(target=self.run, daemon=True)
         self.worker_thread.start()
 
@@ -90,6 +98,10 @@ class NotifierQueue:
         info : dict
             Information dictionary passed to the callbacks.
         """
+        # Counted before it is queued, so the worker can never finish it
+        # before it has been counted.
+        with self._idle:
+            self._pending += 1
         self.queue.append((event, info))
 
     def run(self):
@@ -97,12 +109,40 @@ class NotifierQueue:
         while True:
             while self.queue:
                 event, info = self.queue.popleft()
-                for cb in self._notifiers[event]:
-                    cb(info)
+                try:
+                    for cb in self._notifiers[event]:
+                        cb(info)
+                finally:
+                    with self._idle:
+                        self._pending -= 1
+                        if self._pending == 0:
+                            self._idle.notify_all()
             time.sleep(0.001)
 
-    def join(self):
-        self.queue.join()
+    def join(self, timeout=None):
+        """
+        Wait until every notification queued so far has reached its callbacks.
+
+        Callbacks run on a background thread, so a notification triggered by,
+        e.g., `AbstractSignalQueue.pop_buffer` has not necessarily been
+        delivered when that call returns. Call this before relying on what the
+        callbacks record -- for example, before passing the popped samples to
+        an epoch extractor that needs the 'added' notifications to know which
+        epochs those samples contain.
+
+        Parameters
+        ----------
+        timeout : float, optional
+            Maximum time to wait, in seconds. Waits indefinitely if None.
+
+        Returns
+        -------
+        delivered : bool
+            True once every notification has been delivered, or False if
+            `timeout` elapsed first.
+        """
+        with self._idle:
+            return self._idle.wait_for(lambda: self._pending == 0, timeout)
 
 
 class AbstractSignalQueue:

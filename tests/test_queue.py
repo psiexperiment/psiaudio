@@ -7,7 +7,9 @@ import time
 
 from psiaudio.calibration import FlatCalibration
 from psiaudio.pipeline import extract_epochs
-from psiaudio.queue import FIFOSignalQueue, InterleavedFIFOSignalQueue
+from psiaudio.queue import (
+    FIFOSignalQueue, InterleavedFIFOSignalQueue, NotifierQueue
+)
 from psiaudio.stim import Cos2EnvelopeFactory, ToneFactory
 
 rate = 76.0
@@ -46,6 +48,22 @@ def make_queue(fs, ordering, frequencies, trials, duration=5e-3, isi=isi):
         tones.append(t)
 
     return queue, conn, removed_conn, keys, tones
+
+
+def send_when_notified(queue, extractor, waveform):
+    '''
+    Pass samples popped from `queue` to `extractor` once the queue's
+    notifications have been delivered.
+
+    The queue announces each trial it adds ('added', and 'removed' when a
+    pause cancels one) from a background thread, so they can still be in
+    flight when `pop_buffer` returns. The extractor keeps no past samples
+    here (buffer_size=0), so a trial announced only after its samples were
+    sent is silently never captured -- which made these tests fail at
+    random, a few trials short.
+    '''
+    assert queue.notifier.join(timeout=5)
+    extractor.send(waveform)
 
 
 def test_long_tone_queue(fs):
@@ -140,7 +158,7 @@ def test_fifo_queue_pause_with_requeue(fs):
     # verify that no additional trials are queued and send that to the
     # extractor.
     queue.pause(round(0.5 * fs) / fs)
-    extractor.send(waveform[:round(0.5 * fs)])
+    send_when_notified(queue, extractor, waveform[:round(0.5 * fs)])
     time.sleep(0.1)
 
     # We need to add 1 to account for the very first trial.
@@ -162,7 +180,7 @@ def test_fifo_queue_pause_with_requeue(fs):
     # Doing this will capture the final epoch.
     waveform = queue.pop_buffer(samples)
     assert np.all(waveform == 0)
-    extractor.send(waveform)
+    send_when_notified(queue, extractor, waveform)
     time.sleep(0.1)
     assert len(waveforms) == (n_captured + 1)
 
@@ -188,7 +206,7 @@ def test_fifo_queue_pause_with_requeue(fs):
     n_queued = np.floor(1 / actual_isi) + 1
     k1_left, k2_left = _adjust_remaining(k1_left, k2_left, n_queued)
 
-    extractor.send(waveform)
+    send_when_notified(queue, extractor, waveform)
     time.sleep(0.1)
 
     assert len(conn) == np.floor(1 / actual_isi) + 1
@@ -202,7 +220,7 @@ def test_fifo_queue_pause_with_requeue(fs):
     n_queued = np.floor(5 / actual_isi) + 1
     k1_left, k2_left = _adjust_remaining(k1_left, k2_left, n_queued)
 
-    extractor.send(waveform)
+    send_when_notified(queue, extractor, waveform)
     time.sleep(0.1)
 
     assert queue.remaining_trials(k1) == k1_left
@@ -246,6 +264,9 @@ def test_queue_isi_with_pause(fs):
     queue.pause()
     waveform = queue.pop_buffer(samples)
     assert np.sum(waveform ** 2) == 0
+    # Wait for any notifications still in flight, or a trial wrongly queued
+    # while paused could go unnoticed.
+    assert queue.notifier.join(timeout=5)
     assert len(conn) == int(duration / isi) + 1
 
     # Resume after `duration` seconds. Note that tokens resume *immediately*.
@@ -402,7 +423,9 @@ def test_queue_continuous_tone(fs):
     assert np.all(queue.pop_buffer(samples) == t2.next(samples))
     assert np.all(queue.pop_buffer(samples) == t2.next(samples))
 
-    # Ensure timing information correct
+    # Ensure timing information correct. The notifications arrive from a
+    # background thread, so wait for them first.
+    assert queue.notifier.join(timeout=5)
     assert len(conn) == 2
     assert conn.popleft()['t0'] == 0
     assert conn.popleft()['t0'] == (samples * 2) / fs
@@ -535,13 +558,13 @@ def test_rebuffering(fs):
     tone_samples = int(round(tone_duration * fs))
 
     # Remove 5e-3 sec of the waveform
-    extractor.send(queue.pop_buffer(tone_samples))
+    send_when_notified(queue, extractor, queue.pop_buffer(tone_samples))
     time.sleep(0.1)
 
     # Now, pause the queue at 5e-3 sec, remove 10e-3 worth of samples, and then
     # resume.
     queue.pause(tone_duration)
-    extractor.send(queue.pop_buffer(tone_samples*2))
+    send_when_notified(queue, extractor, queue.pop_buffer(tone_samples*2))
     time.sleep(0.1)
 
     queue.resume()
@@ -558,7 +581,7 @@ def test_rebuffering(fs):
     keep = (tone_duration + 1.0) - old_ts
     keep_samples = int(round(keep * fs))
     w = queue.pop_buffer(int(fs))
-    extractor.send(w[:keep_samples])
+    send_when_notified(queue, extractor, w[:keep_samples])
     time.sleep(0.1)
     assert queue.get_ts() == pytest.approx(1.015, 4)
 
@@ -572,7 +595,7 @@ def test_rebuffering(fs):
     assert len(rem_conn) == 1
 
     # Clear all remaining trials
-    extractor.send(queue.pop_buffer(15 * int(fs)))
+    send_when_notified(queue, extractor, queue.pop_buffer(15 * int(fs)))
     time.sleep(0.1)
 
     # Check that we have the expected number of epochs acquired
@@ -612,3 +635,38 @@ def test_queue_speed(fs, benchmark):
     assert len(segments) == n_blocks
     assert segments[0].shape[-1] == block_size
     assert segments[-1].shape[-1] == block_size
+
+
+def test_notifier_join_waits_for_callbacks():
+    # join() must not return while a callback is still running -- the deque
+    # of pending notifications is already empty by then.
+    import threading
+    notifier = NotifierQueue()
+    started = threading.Event()
+    delivered = []
+
+    def slow_callback(info):
+        started.set()
+        time.sleep(0.2)
+        delivered.append(info)
+
+    notifier.connect(slow_callback, 'added')
+    notifier.notify('added', {'t0': 0})
+    assert started.wait(timeout=5)
+    assert notifier.join(timeout=5)
+    assert delivered == [{'t0': 0}]
+
+
+def test_notifier_join_times_out():
+    import threading
+    notifier = NotifierQueue()
+    release = threading.Event()
+    notifier.connect(lambda info: release.wait(), 'added')
+    notifier.notify('added', {'t0': 0})
+    assert not notifier.join(timeout=0.05)
+    release.set()
+    assert notifier.join(timeout=5)
+
+
+def test_notifier_join_with_nothing_queued():
+    assert NotifierQueue().join(timeout=0)
