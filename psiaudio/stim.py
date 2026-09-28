@@ -351,7 +351,8 @@ def envelope(window, fs, duration, rise_time=None, offset=0, start_time=0,
         i_rise_time = int(round(rise_time * fs))
 
     if i_duration < (i_rise_time * 2):
-        m = f'Rise time ({rise_time}s) longer than envelope duration ({duration}s)'
+        m = f'Rise time ({rise_time}s) longer than envelope duration ({duration}s), ' \
+            f'cannot fit 2x{i_rise_time} samples needed for rise/fall in {i_duration} samples.'
         raise ValueError(m)
 
     if window == 'cosine-squared':
