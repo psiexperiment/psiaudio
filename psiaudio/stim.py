@@ -867,10 +867,18 @@ class BandlimitedFIRNoiseFactory(Carrier):
     calibration : instance of psiaudio.calibration.BaseCalibration
         Used to generate the appropriate noise amplitude (and equalize the
         noise if requested).
+    correct_level : bool
+        If False (the default, for backwards compatibility), the noise is
+        quieter than `level` by about `10 * log10(2 * (fh - fl) / fs)` dB:
+        the filter passes `level` for each frequency in the band, but the
+        white noise it filters spreads its power from 0 to `fs / 2`, so only
+        that fraction falls in the band. If True, the noise is scaled up to
+        make up for this, so the band is at `level` overall.
     '''
     def __init__(self, fs, fl, fh, level, ntaps=1001, window='hann',
                  polarity=1, seed=None, max_correction=np.inf, equalize=False,
-                 calibration=None, audiogram_weighting=None):
+                 calibration=None, audiogram_weighting=None,
+                 correct_level=False):
         vars(self).update(locals())
 
         if calibration is None:
@@ -903,10 +911,18 @@ class BandlimitedFIRNoiseFactory(Carrier):
         # initially generated with the desired RMS.
         self.scale = np.sqrt(3)
 
+        # Unit-variance white noise has a power density of 2 / fs (one-sided),
+        # so the filter passes 2 * (fh - fl) / fs of its power.
+        if correct_level:
+            self.level_correction = np.sqrt(fs / (2 * (fh - fl)))
+        else:
+            self.level_correction = 1
+        self.scale *= self.level_correction
+
         self.reset()
 
     def max_amplitude(self):
-        return np.abs(self.taps).sum()
+        return np.abs(self.taps).sum() * self.level_correction
 
     def reset(self):
         self.zi = self.initial_zi
@@ -921,7 +937,8 @@ class BandlimitedFIRNoiseFactory(Carrier):
 
 def bandlimited_fir_noise(fs, level, fl, fh, duration, ntaps=10001,
                           window='hann', polarity=1, seed=1,
-                          calibration=None, equalize=True):
+                          calibration=None, equalize=True,
+                          correct_level=False):
     '''
     Generate shaped noise using `scipy.signal.firwin2`.
 
@@ -950,6 +967,8 @@ def bandlimited_fir_noise(fs, level, fl, fh, duration, ntaps=10001,
     calibration : {BaseCalibration, None}
         Instance of a `psiaudio.calibration.BaseCalibration` or subclass
         thereof. Used to determine scaling factor for noise amplitude.
+    correct_level : bool
+        See `BandlimitedFIRNoiseFactory`.
     '''
     args = locals()
     args.pop('duration')

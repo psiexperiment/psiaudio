@@ -82,6 +82,24 @@ def test_bandlimited_noise(fs, stim_level, stim_duration, stim_fl, stim_fh,
     )
 
 
+@pytest.mark.parametrize('fs', [96e3, 195312.5])
+@pytest.mark.parametrize('equalize', [False, True])
+def test_bandlimited_fir_noise_level(fs, equalize, stim_calibration):
+    fl, fh, level = 4e3, 40e3, 80
+    kwargs = dict(fs=fs, level=level, fl=fl, fh=fh, duration=2, ntaps=1001,
+                  calibration=stim_calibration, equalize=equalize)
+    expected_shortfall = 10 * np.log10(2 * (fh - fl) / fs)
+
+    def band_level(**extra):
+        x = stim.bandlimited_fir_noise(**kwargs, **extra)
+        return stim_calibration.get_spl(1e3, util.rms(x))
+
+    # The legacy level is short by about the fraction of the white noise's
+    # power in the band (a little less: the filter's skirts pass some more).
+    assert band_level() == pytest.approx(level + expected_shortfall, abs=0.3)
+    assert band_level(correct_level=True) == pytest.approx(level, abs=0.3)
+
+
 def test_bandlimited_noise_factory(fs, stim_level, stim_fl, stim_fh,
                                    stim_calibration, chunksize, n_chunks):
     if fs != 100e3:
