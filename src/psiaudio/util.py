@@ -1041,73 +1041,9 @@ def resample_poly(waveform, fs, target_fs):
     return signal.resample_poly(waveform, up, down, axis=-1)
 
 
-def psd_bootstrap_vec(x, fs, n_draw=400, n_bootstrap=100, rng=None, window=None):
-    '''
-    Calculate the normalized PSD across trials using a boostrapping algorithm
-
-    To estmate the noise floor, the CSD of each trial is computed and then the
-    phases of the CSD are randomized.
-
-    Parameters
-    ----------
-    x : array
-        Signal to compute PSD noise floor over. Must be trial x time.
-    fs : float
-        Sampling rate of signal
-    n_draw : int
-        Number of trials to draw on each bootstrap cycle.
-    n_bootstrap : int
-        Number of bootstrap cycles.
-    rng : instance of RandomState
-        If provided, this will be used to drive the bootstrapping algorithm.
-        Useful when you need to "freeze" results (e.g., for publication).
-    window : {None, string}
-        Type of window to use when calculating bootstrapped PSD.
-
-    Result
-    ------
-    psd_bs : DataFrame
-        Pandas DataFrame indexed by frequency. Columns include `psd_nf`, the
-        noise floor as estimated by the bootstrapping algorithm.
-
-    Notes
-    -----
-    This algorithm is adapted from Zhu et al. 2013 (JASA).
-    '''
-    if rng is None:
-        rng = np.random.RandomState()
-
-    c = csd(x, window=window)
-    i = np.arange(len(c))
-
-    c_bs = c[rng.choice(i, n_draw * n_bootstrap)]
-    c_bs.shape = (n_draw, n_bootstrap, -1)
-    random_phases = rng.uniform(0, 2*np.pi, size=c_bs.shape)
-    c_bs_rand = np.abs(c_bs) * np.exp(-1j * random_phases)
-
-    mean_psd_bs = db(np.abs(c_bs.mean(axis=0)))
-    mean_psd_bs_rand = db(np.abs(c_bs_rand.mean(axis=0)))
-
-    angle_bs = np.angle(c_bs)
-    plv_bs = np.abs(np.mean(np.exp(-1j*angle_bs), axis=0))
-    plv = plv_bs.mean(axis=0)
-
-    psd_nf = mean_psd_bs_rand.mean(axis=0)
-    psd = mean_psd_bs.mean(axis=0)
-    psd_norm = psd - psd_nf
-
-    return pd.DataFrame({
-            'psd_nf': psd_nf,
-            'psd': psd,
-            'psd_norm': psd_norm,
-            'plv': plv,
-        },
-        index=pd.Index(psd_freq(x, fs), name='frequency'),
-    )
-
-
 def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
-                       window=None, callback='tqdm', calculate=None):
+                       window=None, callback='tqdm', calculate=None,
+                       noise_floor='pool'):
     '''
     Calculate the normalized PSD across trials using a boostrapping algorithm
 
@@ -1132,16 +1068,54 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
         Useful when you need to "freeze" results (e.g., for publication).
     window : {None, string}
         Type of window to use when calculating bootstrapped PSD.
+    noise_floor : {'pool', 'draw'}
+        How phases are randomized to estimate the noise floor. With 'pool'
+        (the default), each bootstrap cycle assigns a random phase to every
+        trial in the pool and then uses the same draw as the signal, so a
+        trial drawn twice keeps the same random phase. With 'draw', each drawn
+        trial gets its own random phase. 'draw' was the only behavior in
+        earlier versions; it underestimates the noise floor (see Notes) and is
+        kept for reproducing legacy analyses. With the same `rng` seed, 'draw'
+        reproduces earlier results exactly.
 
     Result
     ------
     psd_bs : DataFrame
         Pandas DataFrame indexed by frequency. Columns include `psd_nf`, the
-        noise floor as estimated by the bootstrapping algorithm.
+        noise floor as estimated by the bootstrapping algorithm, and `plv_nf`,
+        the expected PLV when the trials have no phase locking.
 
     Notes
     -----
     This algorithm is adapted from Zhu et al. 2013 (JASA).
+
+    Each bootstrap cycle draws from the same fixed pool of trials, and the
+    pool's own mean is not zero even when there is no response. Every draw
+    inherits it, so at a frequency with only noise, the expected power of the
+    bootstrapped mean is about ``1 / n_draw + 1 / n_pool`` times the per-trial
+    power, not ``1 / n_draw``. With ``noise_floor='pool'``, the randomized
+    pool has the same structure and `psd_nf` matches `psd` where there is no
+    response. With ``noise_floor='draw'``, `psd_nf` misses the pool term, so
+    `psd_norm` reads about ``10 * log10(1 + n_draw / n_pool)`` dB high at
+    every frequency (3 dB when `n_draw` equals the number of trials).
+
+    `phase` is the circular mean of the bootstrapped phases and `phase_std` is
+    the circular standard deviation, ``sqrt(-2 ln R)``, where R is the length
+    of the mean resultant vector of the bootstrapped phases.
+
+    `plv_nf` does not depend on the signal, only on the number of trials. Each
+    bootstrap cycle resamples from a fixed pool of trials, so the bootstrapped
+    PLV includes the residual phase locking of the pool itself, not just that
+    of `n_draw` independent random phases. With K arrays, M_k trials in array
+    k, and n = `n_draw` / K trials drawn from each array, the expected squared
+    PLV of trials with uniformly random phase is::
+
+        P = sum_k(1/M_k + 1/n - 1/(n * M_k)) / K**2
+
+    and `plv_nf` is ``sqrt(pi * P / 4)``, the mean of a Rayleigh distribution
+    with that mean square. When M_k is much larger than n, this reduces to
+    ``sqrt(pi / (4 * n_draw))``. The Rayleigh approximation is within 0.2% of
+    the exact value for `n_draw` >= 50 and within 2% for `n_draw` >= 2.
     '''
     if rng is None:
         rng = np.random.RandomState()
@@ -1158,6 +1132,9 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
     n_draw_array = n_draw // len(arrays)
     if n_draw_array * len(arrays) != n_draw:
         raise ValueError('n_draw must be multiple of number of arrays')
+    if noise_floor not in ('pool', 'draw'):
+        raise ValueError(
+            f"noise_floor must be 'pool' or 'draw', not {noise_floor!r}")
 
     mean_psd_bs = []
     mean_psd_bs_rand = []
@@ -1166,10 +1143,9 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
 
     for j in range(n_bootstrap):
         # Draw equally from all arrays
-        c_bs = []
-        for i, c in zip(array_i, array_csd):
-            c_bs.append(c[rng.choice(i, n_draw_array, replace=True)])
-        c_bs = np.concatenate(c_bs, axis=0)
+        draws = [rng.choice(i, n_draw_array, replace=True) for i in array_i]
+        c_bs = np.concatenate(
+            [c[d] for c, d in zip(array_csd, draws)], axis=0)
 
         # Calculate mean PSD and angle across the bootstrapped samples.
         mean_psd_bs.append(db(np.abs(c_bs.mean(axis=0))))
@@ -1180,8 +1156,14 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
         plv_bs.append(np.abs(np.mean(np.exp(-1j*angle_bs), axis=0)))
         cb((j + 1) / n_bootstrap)
 
-        # Randomize the phases to estimate noise floor.
-        random_phases = rng.uniform(0, 2 * np.pi, size=c_bs.shape)
+        # Randomize the phases to estimate noise floor. See Notes.
+        if noise_floor == 'pool':
+            random_phases = np.concatenate([
+                rng.uniform(0, 2 * np.pi, size=c.shape)[d]
+                for c, d in zip(array_csd, draws)
+            ], axis=0)
+        else:
+            random_phases = rng.uniform(0, 2 * np.pi, size=c_bs.shape)
         c_bs_rand = np.abs(c_bs) * np.exp(-1j * random_phases)
         mean_psd_bs_rand.append(db(np.abs(c_bs_rand.mean(axis=0))))
 
@@ -1194,12 +1176,26 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
     psd_norm = (mean_psd_bs - mean_psd_bs_rand).mean(axis=0)
     psd_nf = mean_psd_bs_rand.mean(axis=0)
     psd = mean_psd_bs.mean(axis=0)
-    phase = phase_bs.mean(axis=0)
+    # Expected PLV when the trials have no phase locking. See Notes.
+    n_arrays = len(arrays)
+    plv_nf_power = sum(
+        1 / m + 1 / n_draw_array - 1 / (n_draw_array * m)
+        for m in (len(c) for c in array_csd)
+    ) / n_arrays ** 2
+    plv_nf = np.full_like(plv, np.sqrt(np.pi / 4 * plv_nf_power))
+
+    # Phase is circular, so average the unit vectors rather than the angles.
+    # Otherwise, phases that straddle +/- pi average to about 0.
+    phase_resultant = np.exp(1j * phase_bs).mean(axis=0)
+    phase = np.angle(phase_resultant)
+    # Rounding can push the resultant length slightly above 1 when the phases
+    # are nearly identical, which would make phase_std NaN.
+    phase_r = np.minimum(np.abs(phase_resultant), 1)
+    phase_std = np.sqrt(-2 * np.log(phase_r))
 
     psd_std = mean_psd_bs.std(axis=0)
     psd_nf_std = mean_psd_bs_rand.std(axis=0)
     plv_std = plv_bs.std(axis=0)
-    phase_std = phase_bs.std(axis=0)
 
     return pd.DataFrame({
             'psd_nf': psd_nf,
@@ -1207,6 +1203,7 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
             'psd_norm': psd_norm,
             'psd_norm_linear': dbi(psd_norm),
             'plv': plv,
+            'plv_nf': plv_nf,
             'phase': phase,
             'psd_std': psd_std,
             'psd_nf_std': psd_nf_std,

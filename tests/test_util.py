@@ -405,3 +405,187 @@ def test_phase_df_averages():
     assert p.index.name == 'frequency'
     assert len(p) == len(np.fft.rfftfreq(tone.shape[-1] // 4, 1 / fs))
     assert p.loc[1e3] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_psd_bootstrap_loop_phase_near_pi():
+    # The response phase is pi, so noise scatters the bootstrapped phases on
+    # both sides of the +/- pi wrap. An arithmetic mean of those phases would
+    # land near 0 with a spread of about pi.
+    fs = 1000
+    n_samples = 1000
+    n_trials = 200
+    n_draw = 100
+    f0 = 40
+
+    rng = np.random.default_rng(1)
+    t = np.arange(n_samples) / fs
+    tone = np.cos(2 * np.pi * f0 * t + np.pi)
+
+    def make_trials():
+        noise = rng.normal(scale=2, size=(n_trials, n_samples))
+        return tone + noise
+
+    result = util.psd_bootstrap_loop(
+        [make_trials(), make_trials()], fs, n_draw=n_draw, n_bootstrap=200,
+        rng=np.random.RandomState(1), callback=None)
+    row = result.loc[f0]
+
+    # Circular distance from pi.
+    assert np.abs(np.angle(np.exp(1j * (row['phase'] - np.pi)))) < 0.05
+    assert 0 < row['phase_std'] < 0.2
+    assert row['psd_norm'] > 10
+
+    # Two arrays of n_trials, with n_draw / 2 drawn from each.
+    n = n_draw // 2
+    plv_nf_power = 2 * (1 / n_trials + 1 / n - 1 / (n * n_trials)) / 2 ** 2
+    expected_plv_nf = np.sqrt(np.pi / 4 * plv_nf_power)
+    np.testing.assert_allclose(result['plv_nf'], expected_plv_nf)
+    # The closed-form noise floor should match the PLV observed at
+    # frequencies with no response.
+    noise_plv = result['plv'].drop(f0).loc[1:]
+    assert noise_plv.mean() == pytest.approx(expected_plv_nf, rel=0.05)
+
+
+def make_bootstrap_trials(rng, n_trials, amp_mean, amp_std, phase_mean,
+                          phase_std, noise_std, fs, n_samples, f0):
+    '''
+    Generate trials of a tone whose amplitude and phase vary from trial to
+    trial.
+
+    Amplitude is gamma-distributed so it stays positive (a negative amplitude
+    would flip that trial's phase by pi). Phase is normally distributed (i.e.,
+    wrapped normal).
+    '''
+    if amp_std:
+        shape = (amp_mean / amp_std) ** 2
+        scale = amp_std ** 2 / amp_mean
+        amplitude = rng.gamma(shape, scale, size=(n_trials, 1))
+    else:
+        amplitude = np.full((n_trials, 1), amp_mean)
+    phase = rng.normal(phase_mean, phase_std, size=(n_trials, 1))
+    t = np.arange(n_samples) / fs
+    trials = amplitude * np.cos(2 * np.pi * f0 * t + phase)
+    if noise_std:
+        trials += rng.normal(scale=noise_std, size=trials.shape)
+    return trials
+
+
+def expected_bootstrap_stats(amp_mean, amp_std, phase_mean, phase_std,
+                             noise_std, n_samples, n_draw, n_pool):
+    '''
+    Predict the output of psd_bootstrap_loop at the tone frequency.
+
+    The CSD of A * cos(wt + phi) is A / sqrt(2) * exp(1j * phi). Rotating so
+    the mean phase is 0, the per-trial CSD has a mean of `r` and variances of
+    `v_par` and `v_perp` along and across the mean vector. `psd_std` and
+    `phase_std` describe the spread of the mean of `n_draw` trials, so they
+    scale as 1 / sqrt(n_draw). The pool of `n_pool` trials is itself a random
+    sample, so its mean differs from the population's by the `*_pool_se`
+    standard errors, which the bootstrap cannot remove.
+    '''
+    rho = np.exp(-phase_std ** 2 / 2)    # E[cos(dphi)]
+    rho2 = np.exp(-2 * phase_std ** 2)   # E[cos(2 * dphi)]
+    a2 = amp_mean ** 2 + amp_std ** 2    # E[A ** 2]
+    # White noise with variance q ** 2 adds q ** 2 / n_samples to each
+    # component of the CSD.
+    v_noise = noise_std ** 2 / n_samples
+
+    r = amp_mean * rho / np.sqrt(2)
+    v_par = (a2 * (1 + rho2) / 2 - amp_mean ** 2 * rho ** 2) / 2 + v_noise
+    v_perp = a2 * (1 - rho2) / 4 + v_noise
+    db_per_neper = 20 / np.log(10)
+    sample_weight = 1 / n_draw + 1 / n_pool
+
+    return {
+        # Averaging in dB adds a small second-order bias.
+        'psd': util.db(r) + db_per_neper * (v_perp - v_par) / (2 * r ** 2) \
+            * sample_weight,
+        'phase': phase_mean,
+        'psd_std': db_per_neper * np.sqrt(v_par / n_draw) / r,
+        'phase_std': np.sqrt(v_perp / n_draw) / r,
+        # Only valid without additive noise, which also perturbs the phase.
+        # The PLV of the population is exp(-phase_std ** 2 / 2); finite
+        # samples bias it upward.
+        'plv': rho + (1 - rho2) / (4 * rho) * sample_weight,
+        'psd_pool_se': db_per_neper * np.sqrt(v_par / n_pool) / r,
+        'phase_pool_se': np.sqrt(v_perp / n_pool) / r,
+        'plv_pool_se': np.sqrt(((1 + rho2) / 2 - rho ** 2) / n_pool),
+    }
+
+
+@pytest.mark.parametrize('n_arrays', [1, 2])
+@pytest.mark.parametrize(
+    'amp_mean, amp_std, phase_mean, phase_std, noise_std', [
+        (1.0, 0.3, 0.5, 0.0, 0.0),      # amplitude jitter only
+        (1.0, 0.0, 1.0, 0.3, 0.0),      # phase jitter only
+        (1.0, 0.3, np.pi, 0.5, 0.0),    # phase straddles +/- pi
+        (2.0, 1.0, -2.0, 1.0, 0.0),     # broad amplitude and phase spread
+        (1.0, 0.3, 1.0, 0.3, 2.0),      # jitter plus additive noise
+    ])
+def test_psd_bootstrap_loop_recovers_trial_stats(
+        amp_mean, amp_std, phase_mean, phase_std, noise_std, n_arrays):
+    fs = 1000
+    n_samples = 500
+    f0 = 100
+    n_trials = 500
+    n_draw = 100
+
+    rng = np.random.default_rng(0)
+    arrays = [
+        make_bootstrap_trials(rng, n_trials, amp_mean, amp_std, phase_mean,
+                              phase_std, noise_std, fs, n_samples, f0)
+        for _ in range(n_arrays)
+    ]
+    result = util.psd_bootstrap_loop(
+        arrays, fs, n_draw=n_draw, n_bootstrap=500,
+        rng=np.random.RandomState(0), callback=None).loc[f0]
+    e = expected_bootstrap_stats(amp_mean, amp_std, phase_mean, phase_std,
+                                 noise_std, n_samples, n_draw,
+                                 n_trials * n_arrays)
+
+    # Means should fall within the sampling error of the trial pool.
+    assert result['psd'] == pytest.approx(e['psd'], abs=4 * e['psd_pool_se'])
+    phase_error = np.angle(np.exp(1j * (result['phase'] - e['phase'])))
+    # The linear detrend in csd shifts phase by up to ~1e-4 rad.
+    assert abs(phase_error) <= 4 * e['phase_pool_se'] + 1e-3
+    if noise_std == 0:
+        assert result['plv'] == pytest.approx(
+            e['plv'], abs=4 * e['plv_pool_se'] + 1e-6)
+
+    # Spreads across bootstrap cycles should match the predicted standard
+    # error of the mean of n_draw trials.
+    assert result['psd_std'] == pytest.approx(e['psd_std'], rel=0.2)
+    if e['phase_std'] == 0:
+        assert result['phase_std'] < 1e-3
+    else:
+        assert result['phase_std'] == pytest.approx(e['phase_std'], rel=0.2)
+
+
+@pytest.mark.parametrize('n_trials, n_arrays', [(100, 1), (200, 1), (100, 2)])
+def test_psd_bootstrap_loop_noise_floor(n_trials, n_arrays):
+    # With noise only, psd should match psd_nf. The legacy 'draw' mode misses
+    # the residual mean of the fixed trial pool and reads high by
+    # 10 * log10(1 + n_draw / n_pool).
+    fs = 1000
+    n_draw = 100
+    rng = np.random.default_rng(0)
+    arrays = [rng.normal(size=(n_trials, 500)) for _ in range(n_arrays)]
+
+    def mean_psd_norm(noise_floor):
+        result = util.psd_bootstrap_loop(
+            arrays, fs, n_draw=n_draw, n_bootstrap=200,
+            rng=np.random.RandomState(0), callback=None,
+            noise_floor=noise_floor)
+        # Skip DC, which the linear detrend removes.
+        return result['psd_norm'].loc[1:].mean()
+
+    assert mean_psd_norm('pool') == pytest.approx(0, abs=0.15)
+    legacy_bias = 10 * np.log10(1 + n_draw / (n_trials * n_arrays))
+    assert mean_psd_norm('draw') == pytest.approx(legacy_bias, abs=0.15)
+
+
+def test_psd_bootstrap_loop_noise_floor_invalid():
+    x = np.random.default_rng(0).normal(size=(10, 100))
+    with pytest.raises(ValueError, match='noise_floor'):
+        util.psd_bootstrap_loop(x, 1000, n_draw=10, callback=None,
+                                noise_floor='trial')
