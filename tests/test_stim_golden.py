@@ -21,6 +21,8 @@ from numpy.testing import assert_allclose, assert_array_equal
 
 from psiaudio import calibration, stim, util
 
+from .fixtures.generate_fixtures import FIR_NOISE_CASES, fir_noise
+
 FIXTURE_DIR = Path(__file__).parent / 'fixtures'
 CAL = calibration.FlatCalibration.from_spl(94)
 
@@ -134,6 +136,18 @@ def test_golden(func, kwargs, fixture):
         assert_allclose(actual, expected, **tol)
     else:
         assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize('fixture,case', list(FIR_NOISE_CASES.items()),
+                         ids=list(FIR_NOISE_CASES))
+def test_golden_fir_noise_legacy_level(fixture, case):
+    '''
+    `legacy_level=True` reproduces bandlimited FIR noise exactly as it was
+    made, through a real Golay speaker calibration, before its level was
+    fixed, so noise exposures run with the old scaling can be repeated.
+    '''
+    actual = fir_noise(*case, legacy_level=True)
+    assert_array_equal(actual, _load(fixture))
 
 
 # ---------------------------------------------------------------------------

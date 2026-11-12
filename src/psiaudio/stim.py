@@ -867,18 +867,33 @@ class BandlimitedFIRNoiseFactory(Carrier):
     calibration : instance of psiaudio.calibration.BaseCalibration
         Used to generate the appropriate noise amplitude (and equalize the
         noise if requested).
-    correct_level : bool
-        If False (the default, for backwards compatibility), the noise is
-        quieter than `level` by about `10 * log10(2 * (fh - fl) / fs)` dB:
-        the filter passes `level` for each frequency in the band, but the
-        white noise it filters spreads its power from 0 to `fs / 2`, so only
-        that fraction falls in the band. If True, the noise is scaled up to
-        make up for this, so the band is at `level` overall.
+    legacy_level : bool
+        If False (the default), the noise is scaled so that its overall level
+        through `calibration`, summed over the filter's passband and skirts
+        (`fl / 1.1` to `fh * 1.1`), is `level`. `equalize`, `max_correction`
+        and `audiogram_weighting` only shape the spectrum; the overall level
+        stays at `level` whatever the shape, and however much the calibration
+        varies within the band.
+
+        If True, the noise is scaled as it was before this option was added,
+        to reproduce stimuli made then. Each frequency's gain is the
+        calibration's scale factor for a tone at `level`, and the overall
+        level follows from that, which misses `level` two ways:
+
+        * It is quieter by about `10 * log10(2 * (fh - fl) / fs)` dB: the
+          white noise that is filtered spreads its power from 0 to `fs / 2`,
+          so only that fraction falls in the band.
+        * Through a calibration with deep, narrow notches (e.g., a Golay
+          calibration of a speaker in a reverberant space), it is several dB
+          louder. With equalization, the FIR filter can't follow the notches,
+          so the boosts meant to fill them spread across the band. Without
+          it, `get_mean_sf` averages the scale factors' amplitude rather than
+          their power.
     '''
     def __init__(self, fs, fl, fh, level, ntaps=1001, window='hann',
                  polarity=1, seed=None, max_correction=np.inf, equalize=False,
                  calibration=None, audiogram_weighting=None,
-                 correct_level=False):
+                 legacy_level=False):
         vars(self).update(locals())
 
         if calibration is None:
@@ -911,18 +926,21 @@ class BandlimitedFIRNoiseFactory(Carrier):
         # initially generated with the desired RMS.
         self.scale = np.sqrt(3)
 
-        # Unit-variance white noise has a power density of 2 / fs (one-sided),
-        # so the filter passes 2 * (fh - fl) / fs of its power.
-        if correct_level:
-            self.level_correction = np.sqrt(fs / (2 * (fh - fl)))
-        else:
+        if legacy_level:
             self.level_correction = 1
+        else:
+            # Scale the unit-variance noise so that what the filter passes is
+            # at `level` through the calibration.
+            actual = fir_noise_level(self.taps, fs, calibration, fl / 1.1,
+                                     fh * 1.1)
+            self.level_correction = util.dbi(level - actual)
         self.scale *= self.level_correction
 
         self.reset()
 
     def max_amplitude(self):
-        return np.abs(self.taps).sum() * self.level_correction
+        # The noise is uniform in +/- `scale` before filtering.
+        return np.abs(self.taps).sum() * self.scale
 
     def reset(self):
         self.zi = self.initial_zi
@@ -935,10 +953,53 @@ class BandlimitedFIRNoiseFactory(Carrier):
         return waveform * self.polarity
 
 
+def fir_noise_level(taps, fs, calibration, fl=0, fh=None):
+    '''
+    Level, in units of `calibration`, of unit-variance white noise filtered by
+    the FIR filter `taps`, counting frequencies from `fl` to `fh` (Hz).
+
+    The power the filter passes at each frequency is weighted by the
+    calibration's sensitivity there and summed, so a calibration that varies
+    within the band is accounted for exactly. Frequencies outside the
+    calibrated range take the sensitivity at the nearest calibrated one.
+
+    Parameters
+    ----------
+    taps : array
+        FIR filter coefficients.
+    fs : float
+        Sampling rate (Hz).
+    calibration : BaseCalibration
+        Calibration giving the sensitivity at each frequency.
+    fl, fh : float
+        Frequency range to sum over. `fh` defaults to `fs / 2`.
+
+    Returns
+    -------
+    level : float
+        Level in dB (e.g., dB SPL for a calibration referenced to SPL).
+    '''
+    if fh is None:
+        fh = fs / 2
+    # Unit-variance white noise has a one-sided power density of 2 / fs. The
+    # grid is no coarser than 1 Hz so narrow calibration notches are resolved.
+    n = 2 ** int(np.ceil(np.log2(fs / 2)))
+    freq, h = signal.freqz(taps, worN=n + 1, include_nyquist=True, fs=fs)
+    m = (freq >= fl) & (freq <= min(fh, fs / 2))
+    freq, h = freq[m], h[m]
+    cal_freq = getattr(calibration, 'frequency', None)
+    if cal_freq is not None:
+        freq = np.clip(freq, np.min(cal_freq), np.max(cal_freq))
+    sens = calibration.get_sens(freq)
+    df = fs / 2 / n
+    power = np.sum((2 / fs) * np.abs(h) ** 2 * 10 ** (sens / 10) * df)
+    return 10 * np.log10(power)
+
+
 def bandlimited_fir_noise(fs, level, fl, fh, duration, ntaps=10001,
                           window='hann', polarity=1, seed=1,
                           calibration=None, equalize=True,
-                          correct_level=False):
+                          legacy_level=False):
     '''
     Generate shaped noise using `scipy.signal.firwin2`.
 
@@ -967,7 +1028,7 @@ def bandlimited_fir_noise(fs, level, fl, fh, duration, ntaps=10001,
     calibration : {BaseCalibration, None}
         Instance of a `psiaudio.calibration.BaseCalibration` or subclass
         thereof. Used to determine scaling factor for noise amplitude.
-    correct_level : bool
+    legacy_level : bool
         See `BandlimitedFIRNoiseFactory`.
     '''
     args = locals()

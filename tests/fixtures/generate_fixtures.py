@@ -2,20 +2,72 @@
 Regenerate golden fixture files for stim regression tests.
 
 Run from the project root:
-    python tests/fixtures/generate_fixtures.py
+    python tests/fixtures/generate_fixtures.py [fixture name ...]
+
+With no names, every fixture is regenerated.
 
 Re-run this whenever stim.py is intentionally changed in a way that alters
 the generated waveforms.  The regenerated .npy files should be committed
 alongside the code change so the intent is visible in the diff.
 """
 from pathlib import Path
+import sys
 
 import numpy as np
+import pandas as pd
 
 from psiaudio import calibration, stim
 
 FIXTURE_DIR = Path(__file__).parent
 CAL = calibration.FlatCalibration.from_spl(94)
+
+
+def load_golay_calibration():
+    '''
+    Speaker calibration measured with cftscal's Golay routine (coati,
+    DS18-sealed, 2026-10-07), loaded the way cftscal's
+    `CFTSSpeakerCalibration.load_golay` loads it. The file keeps only the rows
+    that loader selects (n_bits=14, output_gain=-15), copied verbatim.
+
+    Its sensitivity has deep, narrow reflection notches (to -34 dB re its
+    1/3-octave average in 2.8-5.6 kHz), which is what made equalized noise
+    play too loud. The tests load it through this function too.
+    '''
+    sens = pd.read_csv(FIXTURE_DIR / 'golay_speaker_sens.csv.gz',
+                       index_col=['n_bits', 'output_gain', 'frequency'])
+    s = sens.loc[14, -15]['sens']
+    return calibration.InterpCalibration(s.index.values, s.values)
+
+
+GOLAY_CAL = load_golay_calibration()
+
+# Settings of the noise-exposure paradigm (noise-exp) with its FIR noise token,
+# which builds the factory itself (`bandlimited_fir_noise` has no
+# `max_correction`).
+FIR_NOISE_KW = dict(fs=100e3, level=100, ntaps=1001, seed=1,
+                    max_correction=20, calibration=GOLAY_CAL)
+FIR_NOISE_SAMPLES = 10000
+
+# Bandlimited FIR noise made with `legacy_level=True`, i.e. as psiaudio made it
+# before its level was fixed. These keep exposures run the old way
+# reproducible. They were first generated with psiaudio at eeb5b3d (before the
+# short-lived `correct_level` option), so they are the old noise itself, not
+# the current code's idea of it; regenerating them must not change them. Each
+# entry is (fl, fh, equalize).
+FIR_NOISE_CASES = {
+    'fir_noise_golay_1p4k_2p8k_eq': (1.4e3, 2.8e3, True),
+    'fir_noise_golay_1p4k_2p8k_noeq': (1.4e3, 2.8e3, False),
+    'fir_noise_golay_2p8k_5p6k_eq': (2.8e3, 5.6e3, True),
+    'fir_noise_golay_2p8k_5p6k_noeq': (2.8e3, 5.6e3, False),
+    'fir_noise_golay_8k_16k_eq': (8e3, 16e3, True),
+    'fir_noise_golay_8k_16k_noeq': (8e3, 16e3, False),
+}
+
+
+def fir_noise(fl, fh, equalize, **kwargs):
+    factory = stim.BandlimitedFIRNoiseFactory(
+        **FIR_NOISE_KW, fl=fl, fh=fh, equalize=equalize, **kwargs)
+    return factory.next(FIR_NOISE_SAMPLES)
 
 
 FIXTURES = {
@@ -81,10 +133,18 @@ FIXTURES = {
         delay=0, equalize=True),
 }
 
+# Bandlimited FIR noise through the Golay calibration, made the old way.
+FIXTURES.update({
+    name: (lambda case=case: fir_noise(*case, legacy_level=True))
+    for name, case in FIR_NOISE_CASES.items()
+})
+
 
 if __name__ == '__main__':
-    for name, fn in FIXTURES.items():
-        waveform = fn()
+    # Fixture names may be given to regenerate only those.
+    names = sys.argv[1:] or list(FIXTURES)
+    for name in names:
+        waveform = FIXTURES[name]()
         path = FIXTURE_DIR / f'{name}.npy'
         np.save(path, waveform)
         print(f'Saved {path.name}  ({len(waveform)} samples)')

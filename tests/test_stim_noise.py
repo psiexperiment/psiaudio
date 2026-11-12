@@ -96,8 +96,12 @@ def test_bandlimited_fir_noise_level(fs, equalize, stim_calibration):
 
     # The legacy level is short by about the fraction of the white noise's
     # power in the band (a little less: the filter's skirts pass some more).
-    assert band_level() == pytest.approx(level + expected_shortfall, abs=0.3)
-    assert band_level(correct_level=True) == pytest.approx(level, abs=0.3)
+    assert band_level(legacy_level=True) == \
+        pytest.approx(level + expected_shortfall, abs=0.3)
+
+    # The level is set from the filter itself, so it is exact (to the
+    # estimate's sampling error, about 0.02 dB here), skirts included.
+    assert band_level() == pytest.approx(level, abs=0.1)
 
 
 def test_bandlimited_noise_factory(fs, stim_level, stim_fl, stim_fh,
