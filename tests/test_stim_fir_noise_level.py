@@ -109,8 +109,10 @@ def test_chunked_generation(golay_calibration, legacy_level, chunksize,
     kwargs = dict(fs=FS, fl=2.8e3, fh=5.6e3, level=LEVEL, seed=1,
                   max_correction=20, equalize=True,
                   calibration=golay_calibration, legacy_level=legacy_level)
+    # Not exact: filtering in chunks rounds differently (by ~1e-17 here), as
+    # for ShapedNoiseFactory.
     assert_chunked_generation(stim.BandlimitedFIRNoiseFactory, kwargs,
-                              chunksize, n_chunks)
+                              chunksize, n_chunks, exact=False)
 
 
 @pytest.mark.parametrize('legacy_level', [False, True])

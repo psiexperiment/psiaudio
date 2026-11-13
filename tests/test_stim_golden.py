@@ -6,8 +6,9 @@ against a reference .npy file stored in tests/fixtures/. Any change in output
 — intentional or not — will cause the test to fail.
 
 Comparison is exact for everything whose output is plain deterministic
-arithmetic. The exception is listed in ``TOLERANT`` below; see the comment
-there for why.
+arithmetic. The exceptions are listed in ``TOLERANT`` below (see the comment
+there for why) and the legacy-level FIR noise, whose filtering rounds
+differently from one machine to the next.
 
 To regenerate the reference files after an intentional change:
     python tests/fixtures/generate_fixtures.py
@@ -145,9 +146,13 @@ def test_golden_fir_noise_legacy_level(fixture, case):
     `legacy_level=True` reproduces bandlimited FIR noise exactly as it was
     made, through a real Golay speaker calibration, before its level was
     fixed, so noise exposures run with the old scaling can be repeated.
+
+    Not bit-exact: the FFT and filtering round differently from one machine
+    or library build to the next (by ~1e-11, relative). The level fix changes
+    the noise by dB, so this tolerance still tells the two scalings apart.
     '''
     actual = fir_noise(*case, legacy_level=True)
-    assert_array_equal(actual, _load(fixture))
+    assert_allclose(actual, _load(fixture), rtol=1e-9, atol=1e-15)
 
 
 # ---------------------------------------------------------------------------
