@@ -112,11 +112,13 @@ class GainSchedule:
         '''
         with self._lock:
             start = self._rendered
+            # Changes that have not started yet are replaced (first, so that
+            # the gain they would have set is not taken as the gain at
+            # `start`).
+            self._changes = [c for c in self._changes if c[0] < start]
             # The ramp starts from wherever the gain is at `start`, which is
             # partway through a ramp if the last change hasn't finished.
             from_db = float(self._gain_db([start])[0])
-            # Changes that have not started yet are replaced.
-            self._changes = [c for c in self._changes if c[0] < start]
             self._changes.append((start, from_db, float(gain_db)))
             return start
 

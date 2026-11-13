@@ -1,3 +1,4 @@
+import itertools
 import threading
 
 import numpy as np
@@ -161,7 +162,7 @@ def test_threads():
 
     t = threading.Thread(target=render_all)
     t.start()
-    gains = iter(range(1, 1000))
+    gains = itertools.count(1)
     while t.is_alive():
         schedule.set(next(gains) % 7)
     t.join()
