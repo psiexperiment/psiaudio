@@ -12,6 +12,7 @@ Submodules
    psiaudio.buffer
    psiaudio.calibration
    psiaudio.efr
+   psiaudio.gain
    psiaudio.pipeline
    psiaudio.plot
    psiaudio.queue
