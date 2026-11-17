@@ -584,6 +584,130 @@ def test_psd_bootstrap_loop_noise_floor(n_trials, n_arrays):
     assert mean_psd_norm('draw') == pytest.approx(legacy_bias, abs=0.15)
 
 
+def expected_db_mean_bias(n_draw, n_pool):
+    '''
+    Expected dB of the mean power minus the mean of the dB power, across
+    bootstrap cycles of `psd_bootstrap_loop`, at a frequency with only noise
+
+    Each bootstrapped mean is ``mu + e``, where `mu` is the mean of the fixed
+    pool of trials and `e` is the deviation of that cycle's draw from it.
+    Both are circular complex Gaussian, with variances proportional to
+    ``1 / n_pool`` and ``1 / n_draw``. `mu` is the same on every cycle, so
+    across cycles the power is non-central chi-squared and, with ``x =
+    |mu|**2 / var(e)``,
+
+        E[ln |mu + e|**2] = ln |mu|**2 + E1(x)
+        ln E[|mu + e|**2] = ln(|mu|**2 + var(e))
+
+    where E1 is the exponential integral. Their difference,
+    ``ln(1 + 1 / x) - E1(x)``, is averaged over frequencies, across which `x`
+    is exponential with mean ``n_draw / n_pool``. With no pool term (`x` -> 0)
+    this is Euler's gamma, the bias for exponential power.
+    '''
+    from scipy import integrate, special
+    r = n_draw / n_pool
+
+    def integrand(x):
+        return (np.log1p(1 / x) - special.exp1(x)) * np.exp(-x / r) / r
+
+    bias, _ = integrate.quad(integrand, 0, np.inf, limit=200)
+    return 10 / np.log(10) * bias
+
+
+def test_psd_bootstrap_loop_power_noise_only():
+    # With noise only, compare the new columns (dB of the mean power across
+    # bootstrap cycles) to the old ones (mean of the dB power) and to each
+    # other.
+    fs = 1000
+    n_trials = 200
+    n_draw = 100
+    rng = np.random.default_rng(0)
+    arrays = rng.normal(size=(n_trials, 500))
+    result = util.psd_bootstrap_loop(
+        arrays, fs, n_draw=n_draw, n_bootstrap=500,
+        rng=np.random.RandomState(0), callback=None)
+    # Skip DC, which the linear detrend removes, and Nyquist, where the CSD is
+    # real rather than complex and so has a different distribution. That
+    # leaves 249 frequencies, which are independent for white noise. Each
+    # check below averages across them, and its tolerance is 4 standard
+    # errors of that average (estimated by repeating the test across seeds).
+    result = result.loc[1:fs / 2 - 1]
+
+    # `psd_nf` re-randomizes the phases of the whole pool on every cycle, so
+    # the power of the bootstrapped mean is exponential across cycles. The
+    # mean of the dB of exponential power is 10 * euler_gamma / ln(10) = 2.51
+    # dB below the dB of the mean power. The standard error of the average
+    # across frequencies is 0.01 dB.
+    gamma_bias = 10 * np.euler_gamma / np.log(10)
+    nf_bias = (result['psd_nf_power'] - result['psd_nf']).mean()
+    assert nf_bias == pytest.approx(gamma_bias, abs=0.04)
+
+    # `psd` draws from the fixed pool, whose mean is the same on every cycle,
+    # so the power is less spread than exponential and the bias is smaller
+    # (2.32 dB when n_draw / n_pool = 0.5). See `expected_db_mean_bias`. The
+    # standard error of the average across frequencies is 0.02 dB.
+    psd_bias = (result['psd_power'] - result['psd']).mean()
+    assert psd_bias == pytest.approx(
+        expected_db_mean_bias(n_draw, n_trials), abs=0.08)
+    # The two biases differ by more than the tolerance, so the check above
+    # can tell them apart.
+    assert abs(psd_bias - gamma_bias) > 0.1
+
+    # Where there is no response, subtracting the noise floor in power
+    # should leave nothing. At each frequency, `psd_power` measures the
+    # power of this particular pool, including its residual mean `mu`, while
+    # `psd_nf_power` measures the power expected of a pool. These agree only
+    # on average across frequencies. `|mu| ** 2` is exponential, and it makes
+    # up 1 / n_pool of the 1 / n_draw + 1 / n_pool total (a third here), so
+    # the excess at each frequency has a standard deviation of about 1 / 3 of
+    # the noise floor. Across 249 frequencies, the standard error is 0.021.
+    power = util.dbi(result['psd_power']) ** 2
+    nf_power = util.dbi(result['psd_nf_power']) ** 2
+    excess = (power - nf_power) / nf_power.mean()
+    assert excess.mean() == pytest.approx(0, abs=0.1)
+
+
+def test_psd_bootstrap_loop_power_recovers_tone():
+    # Subtracting the noise floor in power should recover the power of a tone
+    # in noise. The CSD of A * cos(wt) is A / sqrt(2), so the tone power is
+    # A ** 2 / 2. The phase-randomized trials keep the magnitude of the tone,
+    # so the noise floor includes 1 / n_draw + 1 / n_pool of the tone power
+    # and the excess reads low by that share (3% here).
+    fs = 1000
+    n_samples = 500
+    f0 = 100
+    n_trials = 100
+    n_draw = 50
+    # SNR is about 8 dB at f0 (the noise floor is 0.3 of the tone power), so
+    # leaving the noise floor in, or subtracting it in the wrong units, would
+    # be off by tens of percent.
+    amplitude = 0.03
+    excess = []
+    for seed in range(30):
+        rng = np.random.default_rng(seed)
+        arrays = make_bootstrap_trials(rng, n_trials, amplitude, 0, 0, 0, 1,
+                                       fs, n_samples, f0)
+        result = util.psd_bootstrap_loop(
+            arrays, fs, n_draw=n_draw, n_bootstrap=100,
+            rng=np.random.RandomState(seed), callback=None).loc[f0]
+        excess.append(util.dbi(result['psd_power']) ** 2
+                      - util.dbi(result['psd_nf_power']) ** 2)
+
+    expected = (amplitude / np.sqrt(2)) ** 2         * (1 - 1 / n_draw - 1 / n_trials)
+    # The noise in each pool of trials shifts its mean at f0, and the
+    # bootstrap cannot remove that shift. Across pools, the excess has a
+    # standard deviation of about 40% of the tone power, so a single pool
+    # cannot test for bias. Averaging 30 pools brings the standard error down
+    # to about 7%. The tolerance of 3 standard errors (about 22%) is computed
+    # from the observed spread rather than fixed, so it tracks the noise if
+    # the parameters above change. That is enough to detect gross errors,
+    # such as leaving the noise floor in (+30%) or converting dB to amplitude
+    # rather than power (off by a factor of about 50), but not the 3%
+    # correction above.
+    se = np.std(excess) / np.sqrt(len(excess))
+    assert np.mean(excess) == pytest.approx(expected, abs=3 * se)
+
+
 def test_psd_bootstrap_loop_noise_floor_invalid():
     x = np.random.default_rng(0).normal(size=(10, 100))
     with pytest.raises(ValueError, match='noise_floor'):

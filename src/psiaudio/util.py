@@ -1083,7 +1083,9 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
     psd_bs : DataFrame
         Pandas DataFrame indexed by frequency. Columns include `psd_nf`, the
         noise floor as estimated by the bootstrapping algorithm, and `plv_nf`,
-        the expected PLV when the trials have no phase locking.
+        the expected PLV when the trials have no phase locking. `psd_power`
+        and `psd_nf_power` are like `psd` and `psd_nf`, but average power
+        rather than dB across bootstrap cycles (see Notes).
 
     Notes
     -----
@@ -1098,6 +1100,24 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
     response. With ``noise_floor='draw'``, `psd_nf` misses the pool term, so
     `psd_norm` reads about ``10 * log10(1 + n_draw / n_pool)`` dB high at
     every frequency (3 dB when `n_draw` equals the number of trials).
+
+    `psd`, `psd_nf` and `psd_norm` average dB across bootstrap cycles, which
+    is a geometric mean of power. Where the bootstrapped power is noise-like
+    (always true of `psd_nf`), its distribution is about exponential and the
+    mean of the dB values is about 2.5 dB (10 * euler_gamma / ln(10)) below
+    the dB of the mean power. Where the response is strong, the spread is
+    small and the bias vanishes. Because the bias depends on SNR, subtracting
+    ``dbi(psd_nf) ** 2`` from ``dbi(psd) ** 2`` is not guaranteed to remove
+    the noise power, although in simulations the biases of the two terms
+    largely cancel. `psd_power` and `psd_nf_power` are the dB of the mean
+    power across bootstrap cycles, so
+    ``dbi(psd_power) ** 2 - dbi(psd_nf_power) ** 2`` estimates the response
+    power at each frequency and can be summed across frequencies (e.g.,
+    harmonics). It is zero on average where there is no
+    response. Where there is one, it reads low by a factor of about
+    ``1 - 1 / n_draw - 1 / n_pool`` (0.05 dB for 100 of 500 trials) because
+    the phase-randomized trials keep the magnitude of the response, which
+    therefore adds to the noise floor.
 
     `phase` is the circular mean of the bootstrapped phases and `phase_std` is
     the circular standard deviation, ``sqrt(-2 ln R)``, where R is the length
@@ -1193,6 +1213,12 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
     phase_r = np.minimum(np.abs(phase_resultant), 1)
     phase_std = np.sqrt(-2 * np.log(phase_r))
 
+    # Average power, not dB, across bootstrap cycles. See Notes.
+    with np.errstate(divide='ignore'):
+        psd_power = 10 * np.log10(np.mean(10 ** (mean_psd_bs / 10), axis=0))
+        psd_nf_power = 10 * np.log10(
+            np.mean(10 ** (mean_psd_bs_rand / 10), axis=0))
+
     psd_std = mean_psd_bs.std(axis=0)
     psd_nf_std = mean_psd_bs_rand.std(axis=0)
     plv_std = plv_bs.std(axis=0)
@@ -1202,6 +1228,8 @@ def psd_bootstrap_loop(arrays, fs, n_draw=100, n_bootstrap=100, rng=None,
             'psd': psd,
             'psd_norm': psd_norm,
             'psd_norm_linear': dbi(psd_norm),
+            'psd_power': psd_power,
+            'psd_nf_power': psd_nf_power,
             'plv': plv,
             'plv_nf': plv_nf,
             'phase': phase,
