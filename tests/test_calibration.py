@@ -233,13 +233,9 @@ def test_as_attenuation_levels():
     InterpCalibration.from_spl([1e3, 2e3], [90, 92]),
     PointCalibration([1e3, 2e3], [90, 92], reference='SPL'),
 ], ids=['unity', 'flat_spl', 'attenuation', 'interp', 'point'])
-def test_calibration_rebuilds_from_public_attributes(calibration):
-    # psi saves a calibration with the data by listing its public,
-    # non-callable attributes, and psidata rebuilds it by passing them all
-    # to the constructor. A public property (level_unit was briefly one)
-    # breaks loading the data.
-    saved = {a: getattr(calibration, a) for a in dir(calibration)
-             if not a.startswith('_') and not callable(getattr(calibration, a))}
-    rebuilt = type(calibration)(**saved)
+def test_calibration_rebuilds_from_to_dict(calibration):
+    # psi saves to_dict() with the data, and psidata rebuilds the
+    # calibration by passing it to the constructor.
+    rebuilt = type(calibration)(**calibration.to_dict())
     assert rebuilt.get_level_unit() == calibration.get_level_unit()
     assert rebuilt.get_sf(1e3, 60) == pytest.approx(calibration.get_sf(1e3, 60))

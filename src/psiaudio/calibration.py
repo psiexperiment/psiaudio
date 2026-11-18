@@ -123,16 +123,22 @@ class BaseCalibration:
         if reference is not None:
             setattr(self, f'get_{reference.lower()}', self.get_db)
 
+    def to_dict(self):
+        '''
+        The constructor arguments that rebuild this calibration, i.e.,
+        `type(cal)(**cal.to_dict())` is equivalent to `cal`.
+
+        psi saves this with the data, and psidata passes it back to the
+        constructor when loading the data, so a subclass that takes more
+        arguments must add them here.
+        '''
+        return {'reference': self.reference, 'attrs': self.attrs}
+
     def get_level_unit(self):
         '''
         Unit that levels requested with this calibration are in (e.g., `'dB
         SPL'`), for labeling them. None if the calibration does not say (its
         `reference` is None).
-
-        A method rather than a property on purpose: psi saves a calibration
-        with its data by listing its public, non-callable attributes, and
-        psidata rebuilds it by passing those back to the constructor, which
-        does not accept this.
         '''
         if self.reference is None:
             return None
@@ -288,6 +294,10 @@ class FlatCalibration(BaseCalibration):
         self.sensitivity = sensitivity
         self.fixed_gain = fixed_gain
 
+    def to_dict(self):
+        return {**super().to_dict(), 'sensitivity': self.sensitivity,
+                'fixed_gain': self.fixed_gain}
+
     def get_sens(self, frequency):
         sens = self.sensitivity-self.fixed_gain
         if np.iterable(frequency):
@@ -387,6 +397,11 @@ class InterpCalibration(BaseFrequencyCalibration):
         else:
             self.phase = None
             self._interp_phase = None
+
+    def to_dict(self):
+        return {**super().to_dict(), 'frequency': self.frequency,
+                'sensitivity': self.sensitivity,
+                'fixed_gain': self.fixed_gain, 'phase': self.phase}
 
     def get_sens(self, frequency):
         # Since sensitivity is in dB(V), subtracting fixed_gain from
@@ -501,6 +516,11 @@ class PointCalibration(BaseFrequencyCalibration):
         # Needed to enable vectorizing instance methods. The decorator approach
         # does not work.
         self.get_sens = np.vectorize(self._get_sens)
+
+    def to_dict(self):
+        return {**super().to_dict(), 'frequency': self.frequency,
+                'sensitivity': self.sensitivity,
+                'fixed_gain': self.fixed_gain}
 
     def _get_sens(self, frequency):
         try:
