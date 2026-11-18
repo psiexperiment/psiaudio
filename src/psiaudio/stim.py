@@ -1757,8 +1757,10 @@ def load_wav(fs, filename, level=None, calibration=None, normalization=None,
         Path to wav file
     level : {None, float}
         Level to present wav files at. If normalization is `'pe'`, level will
-        be in units of peSPL (assuming calibration is in units of SPL). If
-        normalization is in `'rms'`, level will be dB SPL RMS.
+        be in units of peSPL (assuming calibration is in units of SPL): the
+        waveform's peak is set to the RMS of a sine at `level`, the same
+        convention as psiaudio's clicks. If normalization is in `'rms'`,
+        level will be dB SPL RMS.
     calibration : {None, Calibration}
         Used to scale waveform to appropriate peSPL. If not provided,
         waveform is not scaled.
@@ -1786,9 +1788,11 @@ def load_wav(fs, filename, level=None, calibration=None, normalization=None,
         if legacy_scaling:
             waveform = waveform / waveform.max()
         else:
-            # Largest absolute value, so a waveform whose negative peak is
-            # larger than its positive one is not scaled above the target
-            # level.
+            # Peak-equivalent, as psiaudio defines it elsewhere: the peak is
+            # set to the RMS of a sine at `level` (scaling by the calibration
+            # below gives that RMS). Largest absolute value, so a waveform
+            # whose negative peak is larger than its positive one is not
+            # scaled above the target level.
             waveform = waveform / np.abs(waveform).max()
     elif normalization == 'rms':
         waveform = waveform / util.rms(waveform)

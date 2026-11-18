@@ -198,3 +198,48 @@ def test_interp_cal_bounds(interp_calibration):
     assert interp_calibration.get_spl(16000, 1) == 80
     with pytest.raises(ValueError, match='uncalibrated'):
         interp_calibration.get_spl(20000, 1)
+
+
+@pytest.mark.parametrize('calibration, expected', [
+    (FlatCalibration.unity(), 'dB re 1 Vrms'),
+    (FlatCalibration.from_spl(94), 'dB SPL'),
+    (FlatCalibration.from_mv_pa(50), 'dB SPL'),
+    (InterpCalibration.from_spl([1e3, 2e3], [90, 90]), 'dB SPL'),
+    (FlatCalibration.as_attenuation(), 'dB re 1 Vrms'),
+    (FlatCalibration.as_attenuation(vrms=2), 'dB re 2 Vrms'),
+    (FlatCalibration(sensitivity=0), None),
+    (InterpCalibration([1e3, 2e3], [90, 90]), None),
+])
+def test_level_unit(calibration, expected):
+    assert calibration.get_level_unit() == expected
+
+
+def test_unity_get_level_is_volts():
+    # 'V' (unity) reports levels the same way an unspecified reference does.
+    assert FlatCalibration.unity().get_level(2.0) == 2.0
+    assert FlatCalibration(sensitivity=0).get_level(2.0) == 2.0
+
+
+def test_as_attenuation_levels():
+    calibration = FlatCalibration.as_attenuation(vrms=2)
+    assert calibration.get_sf(1000, 0) == pytest.approx(2)
+    assert calibration.get_sf(1000, -20) == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize('calibration', [
+    FlatCalibration.unity(),
+    FlatCalibration.from_spl(94),
+    FlatCalibration.as_attenuation(vrms=2),
+    InterpCalibration.from_spl([1e3, 2e3], [90, 92]),
+    PointCalibration([1e3, 2e3], [90, 92], reference='SPL'),
+], ids=['unity', 'flat_spl', 'attenuation', 'interp', 'point'])
+def test_calibration_rebuilds_from_public_attributes(calibration):
+    # psi saves a calibration with the data by listing its public,
+    # non-callable attributes, and psidata rebuilds it by passing them all
+    # to the constructor. A public property (level_unit was briefly one)
+    # breaks loading the data.
+    saved = {a: getattr(calibration, a) for a in dir(calibration)
+             if not a.startswith('_') and not callable(getattr(calibration, a))}
+    rebuilt = type(calibration)(**saved)
+    assert rebuilt.get_level_unit() == calibration.get_level_unit()
+    assert rebuilt.get_sf(1e3, 60) == pytest.approx(calibration.get_sf(1e3, 60))

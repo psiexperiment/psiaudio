@@ -725,6 +725,7 @@ def test_load_wav_peak_normalization(tmp_path):
     filename = write_wav(tmp_path, 'peak.wav', samples)
     corrected = stim.load_wav(1000, filename, normalization='pe',
                               legacy_scaling=False)
+    # The largest absolute value (not the largest positive one) is set to 1.
     assert np.abs(corrected).max() == pytest.approx(1)
     assert corrected.min() == pytest.approx(-1)
     # Legacy scaling divides by the largest positive value (0.25), so the
@@ -789,3 +790,21 @@ def test_stim_has_no_duplicate_definitions():
         if isinstance(node, (ast.ClassDef, ast.FunctionDef))
     )
     assert [n for n, c in names.items() if c > 1] == []
+
+
+def test_load_wav_peak_equivalent_level(tmp_path):
+    # A wav normalized to 'pe' at 60 dB peSPL peaks at the RMS of a 60 dB SPL
+    # tone (psiaudio's peSPL convention, as for clicks), i.e., where a tone
+    # 3 dB softer peaks. (At 8 kHz, a 1 kHz sine is sampled exactly at its
+    # peaks.)
+    fs = 8000
+    t = np.arange(fs) / fs
+    samples = (0.3 * np.sin(2 * np.pi * 1e3 * t)).astype(np.float32)
+    filename = write_wav(tmp_path, 'tone.wav', samples, fs)
+    cal = calibration.FlatCalibration.from_spl(90)
+    tone = stim.ToneFactory(fs=fs, frequency=1e3, level=60 - util.db(np.sqrt(2)),
+                            calibration=cal)
+    wav = stim.load_wav(fs, filename, level=60, calibration=cal,
+                        normalization='pe', legacy_scaling=False)
+    expected_peak = np.abs(tone.next(fs)).max()
+    assert np.abs(wav).max() == pytest.approx(expected_peak, rel=1e-4)

@@ -88,6 +88,17 @@ class CalibrationNFError(CalibrationError):
 ################################################################################
 # Calibration routines
 ################################################################################
+#: Unit levels are given in for each calibration `reference` (see
+#: `BaseCalibration.get_level_unit`). A reference not listed here is its own unit
+#: (e.g., `'dB re 1 Vrms'`, which `FlatCalibration.as_attenuation` uses).
+LEVEL_UNITS = {
+    # Levels are dB SPL (a microphone or speaker calibrated in pascals).
+    'SPL': 'dB SPL',
+    # Levels are dB re 1 Vrms (a passthrough, e.g. `FlatCalibration.unity`).
+    'V': 'dB re 1 Vrms',
+}
+
+
 class BaseCalibration:
     '''
     Assumes that the system is linear for a given frequency
@@ -98,6 +109,10 @@ class BaseCalibration:
         Frequencies that system sensitivity was measured at.
     sensitivity : 1D array
         Sensitivity of system in dB
+    reference : {None, str}
+        What the levels are relative to: `'SPL'` (dB SPL), `'V'` (dB re 1
+        Vrms), another description of the unit (e.g., `'dB re 1 Vrms'`), or
+        None if not specified. See `get_level_unit`.
     attrs : {None, dict}
         Information regarding the calibration (e.g., the filename the
         calibration was loaded from).
@@ -107,6 +122,21 @@ class BaseCalibration:
         self.reference = reference
         if reference is not None:
             setattr(self, f'get_{reference.lower()}', self.get_db)
+
+    def get_level_unit(self):
+        '''
+        Unit that levels requested with this calibration are in (e.g., `'dB
+        SPL'`), for labeling them. None if the calibration does not say (its
+        `reference` is None).
+
+        A method rather than a property on purpose: psi saves a calibration
+        with its data by listing its public, non-callable attributes, and
+        psidata rebuilds it by passing those back to the constructor, which
+        does not accept this.
+        '''
+        if self.reference is None:
+            return None
+        return LEVEL_UNITS.get(self.reference, self.reference)
 
     def _get_db(self, frequency, voltage):
         sensitivity = self.get_sens(frequency)
@@ -169,7 +199,7 @@ class BaseCalibration:
         sensitivity = self.get_sens(frequency)
         if self.reference == 'SPL':
             return voltage * util.dbtopa(sensitivity)
-        elif self.reference is None:
+        elif self.reference in (None, 'V'):
             return voltage * util.dbi(sensitivity)
         else:
             raise ValueError(f'Unrecognized reference: {self.reference}')
@@ -187,16 +217,10 @@ class FlatCalibration(BaseCalibration):
     @classmethod
     def unity(cls):
         '''
-        Passthrough calibration allowing signal level to be specified in Vrms.
+        Passthrough calibration allowing signal level to be specified in Vrms
+        (a level of 0 dB re 1 Vrms is 1 Vrms).
         '''
-        return cls(sensitivity=0)
-
-    @classmethod
-    def as_attenuation(cls, vrms=1, **kwargs):
-        '''
-        Allows levels to be specified in dB attenuation
-        '''
-        return cls.from_db(0, vrms, **kwargs)
+        return cls(sensitivity=0, reference='V')
 
     @classmethod
     def from_pascals(cls, magnitude, vrms=1, **kwargs):
@@ -249,7 +273,10 @@ class FlatCalibration(BaseCalibration):
 
     @classmethod
     def as_attenuation(cls, vrms=1, **kwargs):
-        return cls.from_db(0, vrms, reference='dB re 1Vrms', **kwargs)
+        '''
+        Allows levels to be specified in dB attenuation (0 dB is `vrms`).
+        '''
+        return cls.from_db(0, vrms, reference=f'dB re {vrms:g} Vrms', **kwargs)
 
     @classmethod
     def from_spl(cls, spl, vrms=1, **kwargs):
