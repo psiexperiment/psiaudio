@@ -32,6 +32,32 @@ def fast_cache(f):
 ################################################################################
 # Utilities
 ################################################################################
+def impulse_response_l1(filter_fn, n):
+    '''
+    Sum of the absolute values of a filter's impulse response.
+
+    A filter's output can never exceed its input's peak times this value, so
+    it gives an upper bound on the peak of filtered noise.
+
+    Parameters
+    ----------
+    filter_fn : callable
+        Applies the filter (from rest) to the array it is given and returns
+        the result.
+    n : int
+        Number of samples of the impulse response to sum. Must be long
+        enough for an IIR filter's response to have decayed.
+
+    Returns
+    -------
+    float
+        Sum of absolute values of the impulse response.
+    '''
+    impulse = np.zeros(n)
+    impulse[0] = 1
+    return float(np.abs(filter_fn(impulse)).sum())
+
+
 def apply_max_correction(sf, max_correction):
     """
     Apply a maximum correction limit to the requested calibration scale factor.
@@ -141,6 +167,44 @@ class Waveform:
     def is_complete(self):
         """Check if generation is complete."""
         raise NotImplementedError
+
+    def max_amplitude(self):
+        """
+        Get the largest absolute value the waveform reaches.
+
+        Used, e.g., to check that a stimulus fits within the range of the
+        output it will be played on before it is played.
+
+        Subclasses override this with a closed-form value whenever there is
+        one: exact for deterministic waveforms (e.g., a tone), and an upper
+        bound for filtered noise, whose exact peak depends on the random
+        samples (the bound is the peak of the unfiltered noise times the sum
+        of the absolute values of the filter's impulse response).
+
+        This default, used only when there is no closed form, generates the
+        entire waveform and measures it, so it is exact. The waveform is
+        reset before and after, so call it before playback begins, not
+        partway through.
+
+        Returns
+        -------
+        float
+            Peak absolute amplitude.
+
+        Raises
+        ------
+        ValueError
+            If the waveform has an infinite duration (e.g., a continuous noise
+            that is not gated), since it cannot be generated in full.
+        """
+        self.reset()
+        try:
+            waveform = self.get_samples_remaining()
+        finally:
+            self.reset()
+        if waveform.size == 0:
+            return 0.0
+        return float(np.abs(waveform).max())
 
 
 class ContinuousWaveform(Waveform):
@@ -289,14 +353,16 @@ class GateFactory(Modulator):
         token = self.input_factory.next(samples)
         lb = self.start_samples - self.offset
         ub = lb + self.duration_samples
-        if lb >= 0:
-            token[:lb] = 0
-        if ub > 0:
-            token[ub:] = 0
+        # Zero everything before the gate opens and after it closes. Both
+        # bounds are clipped at 0 so that a block requested entirely after
+        # the gate has closed (ub <= 0) is silenced too.
+        token[:max(lb, 0)] = 0
+        token[max(ub, 0):] = 0
         self.offset += samples
         return token
 
     def max_amplitude(self):
+        # The gate only ever zeroes the input, so it never makes it larger.
         return self.input_factory.max_amplitude()
 
 
@@ -430,6 +496,14 @@ class EnvelopeFactory(GateFactory):
         self.offset += samples
         return waveform
 
+    def max_amplitude(self):
+        # The windows peak at 1, so the envelope never makes the input larger
+        # -- unless a transform reshapes it, in which case there is no closed
+        # form and the (finite) waveform is measured instead.
+        if self.transform is None:
+            return self.input_factory.max_amplitude()
+        return Waveform.max_amplitude(self)
+
 
 class Cos2EnvelopeFactory(EnvelopeFactory):
 
@@ -437,9 +511,6 @@ class Cos2EnvelopeFactory(EnvelopeFactory):
                  start_time=0):
         super().__init__('cosine-squared', fs, duration, rise_time,
                          input_factory, start_time)
-
-    def max_amplitude(self):
-        return self.input_factory.max_amplitude()
 
 
 ################################################################################
@@ -486,7 +557,10 @@ def sam_envelope(offset, samples, fs, depth, fm, delay, equalize):
         eq_phase = sam_eq_phase(depth, 'positive')
         eq_power = sam_eq_power(depth)
     else:
-        eq_phase = eq_power = 0
+        # No phase shift, and no change in overall power (a scaling factor
+        # of 1, not 0, which would silence the waveform).
+        eq_phase = 0
+        eq_power = 1
     return _sam_envelope(offset, samples, fs, depth, fm, delay, eq_phase,
                          eq_power)
 
@@ -517,6 +591,11 @@ class SAMEnvelopeFactory(Modulator):
     def env(self, samples):
         return _sam_envelope(self.offset, samples, self.fs, self.depth,
                              self.fm, self.delay, self.eq_phase, self.eq_power)
+
+    def max_amplitude(self):
+        # The modulated part of the envelope peaks at `eq_power` and the
+        # delay before it is 1.
+        return self.input_factory.max_amplitude() * max(self.eq_power, 1)
 
 
 ################################################################################
@@ -592,21 +671,6 @@ class SquareWaveEnvelopeFactory(Modulator):
 
 
 ################################################################################
-# Square wave factory
-################################################################################
-class SquareWaveFactory(Carrier):
-
-    def __init__(self, fs, depth, fm, duty_cycle, calibration, input_factory,
-                 alpha=0):
-        vars(self).update(locals())
-        self.reset()
-
-    def next(self, samples):
-        return square_wave(self.fs, self.offset, samples, self.depth, self.fm,
-                           self.duty_cycle, self.alpha)
-
-
-################################################################################
 # Broadband noise
 ################################################################################
 class BroadbandNoiseFactory(Carrier):
@@ -643,6 +707,10 @@ class BroadbandNoiseFactory(Carrier):
     def next(self, samples):
         return self.polarity * self.state.uniform(low=self.low, high=self.high, size=samples)
 
+    def max_amplitude(self):
+        # Unfiltered uniform noise never exceeds the bounds it is drawn from.
+        return self.high * abs(self.polarity)
+
 
 def broadband_noise(fs, level, duration, seed=1, equalize=False, polarity=1,
                     calibration=None):
@@ -676,6 +744,13 @@ class NotchFilterFactory(Transform):
     def transform(self, samples):
         samples, self.zi = signal.lfilter(self.b, self.a, samples, zi=self.zi)
         return samples
+
+    def max_amplitude(self):
+        # Upper bound (see `impulse_response_l1`). One second is ample for
+        # the notch's response to decay.
+        l1 = impulse_response_l1(
+            lambda x: signal.lfilter(self.b, self.a, x), int(np.ceil(self.fs)))
+        return self.input_factory.max_amplitude() * l1
 
 
 def notch_noise(fs, notch_frequency, q, level, duration, seed=1,
@@ -805,6 +880,21 @@ class BandlimitedNoiseFactory(Carrier):
         else:
             waveform, self.bp_zi = signal.lfilter(self.b, self.a, waveform, zi=self.bp_zi)
         return waveform * self.polarity
+
+    def _filter(self, waveform):
+        # The same filters `next` applies, starting from rest.
+        if self.equalize:
+            waveform = signal.lfilter(self.iir, [1], waveform)
+        if self.use_sos:
+            return signal.sosfilt(self.sos, waveform)
+        return signal.lfilter(self.b, self.a, waveform)
+
+    def max_amplitude(self):
+        # Upper bound (see `impulse_response_l1`): uniform noise in +/- `high`
+        # through the equalization and band-pass filters. One second covers
+        # the band-pass filter's response for any band this is used with.
+        l1 = impulse_response_l1(self._filter, int(np.ceil(self.fs)))
+        return self.high * l1 * abs(self.polarity)
 
 
 def bandlimited_noise(fs, level, fl, fh, duration=None, filter_rolloff=1,
@@ -1084,88 +1174,9 @@ class ShapedNoiseFactory(Carrier):
         waveform, self.zi = signal.lfilter(self.taps, [1], waveform, zi=self.zi)
         return waveform * self.polarity
 
-
-def shaped_noise(fs, level, gains, duration, ntaps=10001, window='hann',
-                 polarity=1, seed=1, calibration=None):
-    '''
-    Generate shaped noise using `scipy.signal.firwin2`.
-
-    Parameters
-    ----------
-    fs : float
-        Sampling rate
-    level : float
-        Level in units of calibration. If no calibration is provided, noise
-        will be scaled such that `rms(noise) == level`.
-    gains : dict
-        Dictionary mapping frequency breakpoints (Hz) to gain (dB).
-    ntaps : int
-        Number of taps to use for filter calculation. See
-        `scipy.signal.firwin2` for hints on choosing a reasonable value.
-    window : {string, (string, float), float, None}
-        Window function to use. See `window` parameter of
-        `scipy.signal.firwin2` for additional details on acceptable values.
-    polarity : {-1, 1}
-        Polarity of noise. Useful if you need to present two trials in inverted
-        polarity to cancel out electrical artifacts.
-    seed : int
-        Seed to use for random number generator.
-    calibration : {BaseCalibration, None}
-        Instance of a `psiaudio.calibration.BaseCalibration` or subclass
-        thereof. Used to determine scaling factor for noise amplitude.
-    '''
-    args = locals()
-    args.pop('duration')
-    factory = ShapedNoiseFactory(**args)
-    samples = int(round(duration * fs))
-    return factory.next(samples)
-
-
-################################################################################
-# Shaped noise
-################################################################################
-def _calculate_firwin2_taps(gains, fs, window, ntaps):
-    freqs = list(gains.keys())
-    gains = util.dbi(list(gains.values()))
-    taps = signal.firwin2(ntaps, freqs, gains, fs=fs, window=window)
-    initial_zi = signal.lfilter_zi(taps, [1])
-    return taps, initial_zi
-
-
-class ShapedNoiseFactory(Carrier):
-    '''
-    Factory for generating continuous shaped noise using FIR filters.
-    '''
-    def __init__(self, fs, level, gains, ntaps=1001, window='hann',
-                 polarity=1, seed=None, calibration=None):
-        vars(self).update(locals())
-
-        self.taps, self.initial_zi = _calculate_firwin2_taps(gains, fs, window, ntaps)
-        self.sf = level if calibration is None else calibration.get_mean_sf(0, fs/2, level)
-
-        # Calculate how much the filter attenuates a *broadband* (i.e., white
-        # noise) signal. This calculation is obviously not accurate for other
-        # types of signals.
-        w, h = signal.freqz(self.taps, fs=fs)
-        h_mean = np.mean(np.abs(h) ** 2) ** 0.5
-        self.filter_sf = 1 / h_mean
-
-        # The RMS value of noise drawn from a uniform distribution is
-        # amplitude/sqrt(3). By setting the low and high to sqrt(3) and
-        # multiplying by the scaling factors, we can ensure that the noise is
-        # initially generated with the desired RMS.
-        self.scale = np.sqrt(3) * self.filter_sf * self.sf
-        self.reset()
-
-    def reset(self):
-        self.zi = self.initial_zi
-        self.state = np.random.RandomState(self.seed)
-        self.next(len(self.initial_zi + 1))
-
-    def next(self, samples):
-        waveform = self.state.uniform(low=-self.scale, high=self.scale, size=samples)
-        waveform, self.zi = signal.lfilter(self.taps, [1], waveform, zi=self.zi)
-        return waveform * self.polarity
+    def max_amplitude(self):
+        # Upper bound: the noise is uniform in +/- `scale` before filtering.
+        return np.abs(self.taps).sum() * self.scale * abs(self.polarity)
 
 
 def shaped_noise(fs, level, gains, duration, ntaps=10001, window='hann',
@@ -1433,6 +1444,9 @@ class SilenceFactory(Carrier):
     def reset(self):
         pass
 
+    def max_amplitude(self):
+        return abs(self.fill_value)
+
 def silence(fs, duration):
     '''
     Utility function for generating silence
@@ -1461,12 +1475,16 @@ class SquareWaveFactory(Carrier):
         self.offset = 0
 
     def next(self, samples):
-        waveform = np.zeros(samples)
-        o = self.offset % self.cycle_samples
-        while o < samples:
-            waveform[o:o+self.on_samples] = self.sf
-            o += self.cycle_samples
+        # Position of each sample within its cycle. (This used to restart the
+        # cycle at the beginning of every block, since the offset was never
+        # advanced.)
+        position = (self.offset + np.arange(samples)) % self.cycle_samples
+        waveform = np.where(position < self.on_samples, self.sf, 0.0)
+        self.offset += samples
         return waveform
+
+    def max_amplitude(self):
+        return abs(self.sf) if self.on_samples > 0 else 0.0
 
 
 ################################################################################
@@ -1684,8 +1702,48 @@ class BandlimitedClickFactory(FixedWaveform):
 ################################################################################
 # Wavfiles
 ################################################################################
+def wav_to_float(waveform, legacy_scaling=True):
+    '''
+    Convert samples read from a wav file to floating point, where full scale
+    is -1.0 to 1.0.
+
+    Parameters
+    ----------
+    waveform : ndarray
+        Samples as returned by `scipy.io.wavfile.read`. Floating-point samples
+        are already in the range -1.0 to 1.0. Signed integer samples (16- and
+        32-bit, as well as 24-bit, which scipy returns as 32-bit) are divided
+        by the magnitude of the most negative value, so 0 stays 0. Unsigned
+        8-bit samples are centered on 128, as the wav format defines them.
+    legacy_scaling : bool
+        If True, convert integer samples the way psiaudio used to, which
+        stretched the full integer range onto -1.0 to 1.0. That adds a small
+        offset (0 in a 16-bit file becomes 1.5e-5) and does not center 8-bit
+        files on 128. Use it to reproduce stimuli played (and data collected)
+        before this was corrected.
+
+    Returns
+    -------
+    ndarray
+        Writable floating-point copy of the samples (never the read-only
+        memory map that `wavfile.read(..., mmap=True)` returns).
+    '''
+    if np.issubdtype(waveform.dtype, np.floating):
+        return np.array(waveform)
+    if legacy_scaling:
+        ii = np.iinfo(waveform.dtype)
+        waveform = waveform.astype(np.float32)
+        return (waveform - ii.min) / (ii.max - ii.min) * 2 - 1
+    if waveform.dtype == np.uint8:
+        return (waveform.astype(np.float32) - 128) / 128
+    if np.issubdtype(waveform.dtype, np.signedinteger):
+        return waveform.astype(np.float32) / -np.iinfo(waveform.dtype).min
+    raise ValueError(f'Unsupported wav sample type: {waveform.dtype}')
+
+
 @fast_cache
-def load_wav(fs, filename, level=None, calibration=None, normalization=None):
+def load_wav(fs, filename, level=None, calibration=None, normalization=None,
+             legacy_scaling=True):
     '''
     Load wav file, scale, and resample
 
@@ -1709,20 +1767,29 @@ def load_wav(fs, filename, level=None, calibration=None, normalization=None):
         `'pe'`, rescales to peak-equivalent so the max value of the waveform
         matches the target level. If `'rms'`, rescales so that the RMS value of
         the waveform matches the target level.
+    legacy_scaling : bool
+        If True (the default), scale the waveform exactly as psiaudio used to,
+        so that stimuli match those played when data was collected with
+        earlier versions. Legacy scaling converts integer samples with a small
+        offset (see `wav_to_float`), and `'pe'` normalization divides by the
+        largest *positive* value, so a waveform whose negative peak is larger
+        ends up above the target level. Set to False for the corrected
+        scaling.
     '''
-    log.warning('Loading %s', filename)
+    log.info('Loading %s', filename)
     file_fs, waveform = wavfile.read(filename, mmap=True)
-
-    # Rescale to range -1.0 to 1.0
-    if waveform.dtype != np.float32:
-        ii = np.iinfo(waveform.dtype)
-        waveform = waveform.astype(np.float32)
-        waveform = (waveform - ii.min) / (ii.max - ii.min) * 2 - 1
+    waveform = wav_to_float(waveform, legacy_scaling)
 
     if normalization is None:
         pass
     elif normalization == 'pe':
-        waveform = waveform / waveform.max()
+        if legacy_scaling:
+            waveform = waveform / waveform.max()
+        else:
+            # Largest absolute value, so a waveform whose negative peak is
+            # larger than its positive one is not scaled above the target
+            # level.
+            waveform = waveform / np.abs(waveform).max()
     elif normalization == 'rms':
         waveform = waveform / util.rms(waveform)
     else:
@@ -1743,24 +1810,29 @@ def load_wav(fs, filename, level=None, calibration=None, normalization=None):
 class WavFileFactory(FixedWaveform):
 
     def __init__(self, fs, filename, level=None, calibration=None,
-                 normalization='pe'):
+                 normalization='pe', legacy_scaling=True):
+        '''
+        See `load_wav` for the parameters.
+        '''
         self.fs = fs
         self.filename = filename
         self.level = level
         self.calibration = calibration
         self.normalization = normalization
+        self.legacy_scaling = legacy_scaling
         self.reset()
 
     @property
     def waveform(self):
         return load_wav(self.fs, self.filename, self.level, self.calibration,
-                        normalization=self.normalization)
+                        normalization=self.normalization,
+                        legacy_scaling=self.legacy_scaling)
 
 
 class WavSequenceFactory(ContinuousWaveform):
 
     def __init__(self, fs, path, level=None, calibration=None, duration=-1,
-                 normalization='pe'):
+                 normalization='pe', legacy_scaling=True):
         '''
         Parameters
         ----------
@@ -1791,10 +1863,13 @@ class WavSequenceFactory(ContinuousWaveform):
             peak-equivalent so the max value of the waveform matches the target
             level. If `'rms'`, rescales so that the RMS value of the waveform
             matches the target level.
+        legacy_scaling : bool
+            See `load_wav`.
         '''
         self.wav_files = wavs_from_path(fs, path, level=level,
                                         calibration=calibration,
-                                        normalization=normalization)
+                                        normalization=normalization,
+                                        legacy_scaling=legacy_scaling)
         self.fs = fs
         self.duration = duration
         self.reset()
@@ -1809,6 +1884,10 @@ class WavSequenceFactory(ContinuousWaveform):
 
     def connect(self, *args, **kwargs):
         return self.queue.connect(*args, **kwargs)
+
+    def max_amplitude(self):
+        # The files play one at a time, so the loudest one sets the peak.
+        return max((f.max_amplitude() for f in self.wav_files), default=0.0)
 
 
 def wavs_from_path(fs, path, *args, **kwargs):
@@ -2114,7 +2193,7 @@ def ramped_tone(fs, frequency, level, duration, rise_time=None,
 
 def apply_sam_envelope(waveform, fs, depth, fm, delay, equalize):
     env = sam_envelope(offset=0, samples=len(waveform), fs=fs, depth=depth,
-                       fm=fm, delay=delay, equalize=True)
+                       fm=fm, delay=delay, equalize=equalize)
     return env * waveform
 
 

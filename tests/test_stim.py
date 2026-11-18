@@ -504,3 +504,288 @@ def test_envelope_transform_factory(fs, chunksize, n_chunks, stim_calibration):
                                    transform=lambda x: x ** 10)
         return env
     assert_chunked_generation(make_factory, {}, chunksize, n_chunks)
+
+
+################################################################################
+# Gate
+################################################################################
+def test_gate_silences_after_gate_closes():
+    # A block requested entirely after the gate has closed used to pass the
+    # carrier straight through.
+    fs = 1000
+    carrier = stim.ToneFactory(fs=fs, frequency=50, level=1)
+    gate = stim.GateFactory(fs=fs, start_time=0.01, duration=0.02,
+                            input_factory=carrier)
+    before = gate.next(10)
+    during = gate.next(20)
+    after = gate.next(20)
+    assert_array_equal(before, 0)
+    assert np.abs(during).max() > 0
+    assert_array_equal(after, 0)
+
+
+def test_gate_chunked_generation_matches_unchunked():
+    fs = 1000
+    def make_factory():
+        carrier = stim.ToneFactory(fs=fs, frequency=50, level=1)
+        return stim.GateFactory(fs=fs, start_time=0.015, duration=0.02,
+                                input_factory=carrier)
+    assert_chunked_generation(make_factory, {}, 7, 10)
+
+
+################################################################################
+# max_amplitude
+################################################################################
+def make_iir_noise(fs=25e3, **kwargs):
+    return stim.BandlimitedNoiseFactory(
+        fs=fs, seed=1, level=1, fl=1e3, fh=4e3, filter_rolloff=1,
+        passband_attenuation=1, stopband_attenuation=80, **kwargs)
+
+
+def peak(factory, samples):
+    factory.reset()
+    return np.abs(factory.next(samples)).max()
+
+
+@pytest.mark.parametrize('make_factory', [
+    lambda: make_iir_noise(),
+    lambda: make_iir_noise(use_sos=True),
+    lambda: make_iir_noise(polarity=-1),
+    lambda: stim.BroadbandNoiseFactory(fs=25e3, level=1),
+    lambda: stim.ShapedNoiseFactory(fs=25e3, level=1, seed=1,
+                                    gains={0: -20, 1e3: 0, 4e3: 0, 12.5e3: -20}),
+    lambda: stim.NotchFilterFactory(
+        fs=25e3, notch_frequency=2e3, q=1.33,
+        input_factory=stim.BroadbandNoiseFactory(fs=25e3, level=1)),
+    lambda: stim.SAMEnvelopeFactory(
+        fs=25e3, depth=1, fm=5, delay=0.1, direction='positive',
+        input_factory=stim.ToneFactory(fs=25e3, frequency=1e3, level=1)),
+], ids=['iir_noise', 'iir_noise_sos', 'iir_noise_negative', 'broadband_noise',
+        'shaped_noise', 'notch_noise', 'sam_tone'])
+def test_continuous_max_amplitude_is_an_upper_bound(make_factory):
+    # Continuous waveforms (including noise, which used to have no
+    # max_amplitude at all) answer from a closed form, which must never be
+    # exceeded by what is actually played.
+    factory = make_factory()
+    bound = factory.max_amplitude()
+    assert np.isfinite(bound)
+    assert peak(factory, int(25e3 * 2)) <= bound
+
+
+def test_broadband_noise_max_amplitude_is_exact():
+    factory = stim.BroadbandNoiseFactory(fs=25e3, level=2)
+    assert factory.max_amplitude() == pytest.approx(2 * np.sqrt(3))
+
+
+def test_silence_max_amplitude():
+    assert stim.SilenceFactory().max_amplitude() == 0
+    assert stim.SilenceFactory(fill_value=-0.5).max_amplitude() == 0.5
+
+
+def test_square_wave_max_amplitude():
+    on = stim.SquareWaveFactory(fs=1000, level=-2, frequency=10, duty_cycle=0.5)
+    off = stim.SquareWaveFactory(fs=1000, level=2, frequency=10, duty_cycle=0)
+    assert on.max_amplitude() == 2
+    assert off.max_amplitude() == 0
+
+
+def test_gated_noise_uses_noise_bound():
+    noise = make_iir_noise()
+    gate = stim.Cos2EnvelopeFactory(fs=25e3, duration=0.1, rise_time=0.01,
+                                    input_factory=noise)
+    assert gate.max_amplitude() == noise.max_amplitude()
+    assert np.abs(gate.get_samples_remaining()).max() <= gate.max_amplitude()
+
+
+def test_gated_tone_max_amplitude_uses_closed_form():
+    fs = 25e3
+    tone = stim.ToneFactory(fs=fs, frequency=1e3, level=1)
+    gate = stim.GateFactory(fs=fs, start_time=0, duration=0.1,
+                            input_factory=tone)
+    assert gate.max_amplitude() == tone.max_amplitude()
+
+
+def make_transformed_envelope(fs=1000):
+    carrier = stim.ToneFactory(fs=fs, frequency=50, level=1)
+    # The transform can push the envelope above 1, so there is no closed
+    # form and the waveform has to be measured.
+    return stim.EnvelopeFactory(envelope='bartlett', fs=fs, duration=0.5,
+                                rise_time=None, input_factory=carrier,
+                                transform=lambda x: 3 * x)
+
+
+def test_envelope_with_transform_is_measured():
+    factory = make_transformed_envelope()
+    expected = np.abs(make_transformed_envelope().get_samples_remaining()).max()
+    assert factory.max_amplitude() == pytest.approx(expected)
+    # Larger than the carrier's own closed form, which would be wrong here.
+    assert factory.max_amplitude() > factory.input_factory.max_amplitude()
+
+
+def test_measured_max_amplitude_leaves_factory_at_start():
+    factory = make_transformed_envelope()
+    factory.max_amplitude()
+    assert_array_equal(factory.get_samples_remaining(),
+                       make_transformed_envelope().get_samples_remaining())
+
+
+def test_continuous_waveform_without_closed_form_raises():
+    class Ramp(stim.Carrier):
+        def reset(self):
+            self.offset = 0
+
+        def next(self, samples):
+            result = self.offset + np.arange(samples, dtype=float)
+            self.offset += samples
+            return result
+
+    with pytest.raises(ValueError):
+        Ramp().max_amplitude()
+
+
+def test_square_wave_chunked_generation_matches_unchunked():
+    # The square wave used to restart its cycle at the start of every block.
+    assert_chunked_generation(
+        stim.SquareWaveFactory,
+        dict(fs=1000, level=1, frequency=30, duty_cycle=0.25), 7, 20)
+
+
+################################################################################
+# SAM envelope without equalization
+################################################################################
+def test_sam_envelope_not_equalized():
+    # Without equalization the envelope used to be scaled by 0 (silence).
+    fs = 1000
+    depth = 1
+    env = stim.sam_envelope(0, fs, fs, depth, 5, 0, equalize=False)
+    assert env.max() == pytest.approx(1)
+    assert env.min() == pytest.approx(0, abs=1e-6)
+    assert env.mean() == pytest.approx(1 - depth / 2)
+
+
+def test_apply_sam_envelope_honors_equalize():
+    fs = 1000
+    waveform = np.ones(fs)
+    for equalize in (True, False):
+        expected = stim.sam_envelope(0, fs, fs, 1, 5, 0, equalize=equalize)
+        actual = stim.apply_sam_envelope(waveform, fs, 1, 5, 0,
+                                         equalize=equalize)
+        assert_array_almost_equal(actual, expected)
+
+
+################################################################################
+# Wav files
+################################################################################
+def test_wav_to_float_signed_integers():
+    for dtype in (np.int16, np.int32):
+        ii = np.iinfo(dtype)
+        samples = np.array([ii.min, 0, ii.max], dtype=dtype)
+        result = stim.wav_to_float(samples, legacy_scaling=False)
+        assert result[0] == -1
+        # Zero must stay zero (legacy scaling adds a small offset).
+        assert result[1] == 0
+        assert result[2] == pytest.approx(1, abs=1e-4)
+
+
+def test_wav_to_float_unsigned_8_bit():
+    samples = np.array([0, 128, 255], dtype=np.uint8)
+    result = stim.wav_to_float(samples, legacy_scaling=False)
+    assert_array_almost_equal(result, [-1, 0, 127 / 128])
+
+
+def test_wav_to_float_legacy_scaling_is_the_default():
+    # Stimuli for data already collected were scaled this way, so it stays
+    # the default: full integer range stretched onto -1 to 1.
+    samples = np.array([-32768, 0, 32767], dtype=np.int16)
+    expected = (samples.astype(np.float32) + 32768) / 65535 * 2 - 1
+    assert_array_equal(stim.wav_to_float(samples), expected)
+    assert_array_equal(stim.wav_to_float(samples, legacy_scaling=True),
+                       expected)
+
+
+def test_wav_to_float_float_is_writable_copy():
+    samples = np.array([-0.5, 0.25], dtype=np.float32)
+    samples.flags.writeable = False
+    for legacy_scaling in (True, False):
+        result = stim.wav_to_float(samples, legacy_scaling=legacy_scaling)
+        assert result.flags.writeable
+        assert_array_equal(result, samples)
+
+
+def write_wav(tmp_path, name, samples, fs=1000):
+    from scipy.io import wavfile
+    filename = tmp_path / name
+    wavfile.write(filename, fs, samples)
+    return filename
+
+
+def test_load_wav_peak_normalization(tmp_path):
+    # Negative peak larger than the positive one.
+    samples = np.array([0, 0.25, -0.5, 0.1], dtype=np.float32)
+    filename = write_wav(tmp_path, 'peak.wav', samples)
+    corrected = stim.load_wav(1000, filename, normalization='pe',
+                              legacy_scaling=False)
+    assert np.abs(corrected).max() == pytest.approx(1)
+    assert corrected.min() == pytest.approx(-1)
+    # Legacy scaling divides by the largest positive value (0.25), so the
+    # negative peak ends up at -2.
+    legacy = stim.load_wav(1000, filename, normalization='pe')
+    assert legacy.max() == pytest.approx(1)
+    assert legacy.min() == pytest.approx(-2)
+
+
+def test_load_wav_float_file_with_calibration(tmp_path):
+    # Float files are read as a read-only memory map; scaling them by the
+    # calibration used to fail.
+    samples = np.array([0, 0.5, -0.5], dtype=np.float32)
+    filename = write_wav(tmp_path, 'float.wav', samples)
+    cal = calibration.FlatCalibration.unity()
+    result = stim.load_wav(1000, filename, level=6, calibration=cal)
+    assert_array_almost_equal(result, samples * util.dbi(6), decimal=5)
+
+
+def test_load_wav_int16_file(tmp_path):
+    samples = np.array([0, 16384, -32768], dtype=np.int16)
+    filename = write_wav(tmp_path, 'int16.wav', samples)
+    result = stim.load_wav(1000, filename, legacy_scaling=False)
+    assert_array_almost_equal(result, [0, 0.5, -1])
+
+
+def test_wav_factories_pass_legacy_scaling(tmp_path):
+    samples = np.array([0, 0.25, -0.5, 0.1], dtype=np.float32)
+    write_wav(tmp_path, 'a.wav', samples)
+    for legacy_scaling, expected in ((True, 2), (False, 1)):
+        factory = stim.WavFileFactory(1000, tmp_path / 'a.wav',
+                                      normalization='pe',
+                                      legacy_scaling=legacy_scaling)
+        assert factory.max_amplitude() == pytest.approx(expected)
+        sequence = stim.WavSequenceFactory(1000, tmp_path,
+                                           normalization='pe',
+                                           legacy_scaling=legacy_scaling)
+        assert sequence.max_amplitude() == pytest.approx(expected)
+
+
+def test_wav_sequence_max_amplitude_is_loudest_file(tmp_path):
+    write_wav(tmp_path, 'quiet.wav', np.array([0, 0.1], dtype=np.float32))
+    write_wav(tmp_path, 'loud.wav', np.array([0, -0.4], dtype=np.float32))
+    # No normalization, so each file keeps its own peak.
+    sequence = stim.WavSequenceFactory(1000, tmp_path, normalization=None)
+    assert sequence.max_amplitude() == pytest.approx(0.4)
+
+
+################################################################################
+# Duplicate definitions
+################################################################################
+def test_stim_has_no_duplicate_definitions():
+    # A second definition with the same name silently replaces the first
+    # (e.g., a dead SquareWaveFactory and a second copy of the shaped noise
+    # code both used to be in this module).
+    import ast
+    import collections
+    from pathlib import Path
+    tree = ast.parse(Path(stim.__file__).read_text(encoding='utf-8'))
+    names = collections.Counter(
+        node.name for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef))
+    )
+    assert [n for n, c in names.items() if c > 1] == []
